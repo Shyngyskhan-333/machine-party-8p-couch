@@ -1,0 +1,7 @@
+decompiled/
+src/overlay/
+dist/
+shots/
+*.pck
+*.bat
+__pycache__/

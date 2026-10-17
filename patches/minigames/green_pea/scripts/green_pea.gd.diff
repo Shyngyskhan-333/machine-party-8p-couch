@@ -1,0 +1,490 @@
+--- a/minigames/green_pea/scripts/green_pea.gd
++++ b/minigames/green_pea/scripts/green_pea.gd
+@@ -1,216 +1,271 @@
+-extends Minigame
+-
+-class_name GreenPeaMinigame
+-
+-const player_scene = preload("uid://cyhptkj072mxh")
+-
+-@export_category("States")
+-@export var countdown_state: State
+-
+-@export_category("Components")
+-@export var coach_handler: GreenPeaCoachHandler
+-
+-@export_category("Networked")
+-@export var player_spawn_parent: Node3D
+-@export var player_spawn_positions: Node3D
+-
+-@export_category("Nodes")
+-@export var camera: Camera3D
+-
+-@export var ambience_speaker_controllers: Array[SpeakerController]
+-
+-var players: Array[GreenPeaPlayer]
+-var player_characters: Dictionary[int, GreenPeaPlayer]
+-var finished_players: Array[int]
+-var active_players: Array[int]
+-
+-var halfway_done_players: Array[int]
+-var player_scores: Dictionary[int, int]
+-
+-var finished: bool = false
+-
+-
+-
+-var ach_timer: float = 0.0
+-var ach_duration: float = 20.0
+-var ach_active: bool = false
+-
+-func _ready() -> void :
+-	super._ready()
+-
+-	camera.current = true
+-
+-	if multiplayer.is_server():
+-
+-		countdown_state.countdown_started.connect(_on_countdown_started)
+-		countdown_state.tick.connect(_on_countdown_tick)
+-		countdown_state.expired.connect(_on_countdown_expired)
+-
+-	if GameManager.local_game:
+-
+-		await get_tree().create_timer(1.0).timeout
+-		minigame_ready.emit(1)
+-
+-func _process(_delta: float) -> void :
+-
+-	if ach_active:
+-		ach_timer = max(ach_timer - _delta, 0.0)
+-		if ach_timer <= 0.0:
+-			ach_active = false
+-
+-func fade_in_ambience():
+-	for speaker_controller in ambience_speaker_controllers:
+-		speaker_controller.speaker.volume_linear = 0
+-		speaker_controller.fade_duration = 3
+-		speaker_controller.fade_in_custom(db_to_linear(speaker_controller.original_volume_db), true)
+-
+-func all_players_loaded():
+-	super.all_players_loaded()
+-
+-	if not multiplayer.is_server():
+-		return
+-
+-	is_all_player_loaded = true
+-	minigame_ready.emit(multiplayer.get_unique_id())
+-
+-func initialize(_round_number: int, _total_rounds: int, _scores: Dictionary = {}):
+-	super.initialize(_round_number, _total_rounds, _scores)
+-
+-	spawn_players()
+-	coach_handler.start_reading_rpc.rpc()
+-	state_machine.transition_to_rpc.rpc(&"Round", {"round": _round_number, "total": _total_rounds})
+-
+-func spawn_players():
+-
+-
+-	var counter: int = 0
+-	for key in PlayerManager.player_presences.keys():
+-
+-		var player_presence: PlayerPresence = PlayerManager.player_presences[key]
+-
+-		var player_character = player_scene.instantiate()
+-		player_spawn_parent.add_child(player_character, true)
+-
+-		player_character.set_player_presence.rpc(player_presence.network_id)
+-		player_character.set_marker_camera_from_path_rpc.rpc(camera.get_path())
+-		player_character.setup_rpc.rpc(
+-			player_spawn_positions.get_child(counter).global_position, 
+-			player_spawn_positions.get_child(counter).global_rotation, 
+-			counter
+-		)
+-		player_characters[player_presence.network_id] = player_character
+-		player_character.finished.connect(_on_player_finished)
+-		player_character.acted.connect(coach_handler._on_player_acted)
+-		player_character.died.connect(_on_player_died)
+-		player_character.halfway_done.connect(_on_player_halfway)
+-
+-		active_players.append(player_presence.network_id)
+-
+-		player_scores[player_presence.network_id] = 0
+-
+-		counter += 1
+-
+-	coach_handler.set_players(player_characters)
+-
+-
+-func initialize_debug_specifics():
+-	super.initialize_debug_specifics()
+-
+-
+-func check_game_end():
+-
+-	if finished:
+-		return
+-
+-	if active_players.size() > 0:
+-		return
+-
+-	finished = true
+-
+-	player_scores_finalized.emit(player_scores)
+-
+-	await get_tree().create_timer(3.0).timeout
+-	set_minigame_sfx_linear_volume_rpc.rpc(0.0)
+-
+-	state_machine.transition_to_rpc.rpc(&"Finished")
+-	set_effects_visibility_rpc.rpc(false)
+-
+-
+-
+-@rpc("any_peer", "call_local", "reliable")
+-func remove_player_rpc(_network_id: int):
+-
+-	var player_instance = player_characters.get(_network_id, null)
+-
+-	if player_instance:
+-		players.erase(player_instance)
+-		player_characters[_network_id].queue_free()
+-		player_characters.erase(_network_id)
+-
+-	active_players.erase(_network_id)
+-
+-
+-
+-func player_disconnected(_network_id: int):
+-	super.player_disconnected(_network_id)
+-
+-	if not multiplayer.is_server():
+-		return
+-
+-	remove_player_rpc.rpc(_network_id)
+-
+-	await get_tree().create_timer(1.0).timeout
+-
+-	if multiplayer.is_server():
+-		check_game_end()
+-
+-func _on_player_finished(_network_id: int):
+-
+-	if player_characters.has(_network_id):
+-		if ach_active:
+-			player_characters[_network_id].trigger_achievement_rpc.rpc()
+-
+-	if active_players.has(_network_id):
+-
+-		player_scores[_network_id] += 1
+-		active_players.erase(_network_id)
+-
+-	if finished_players.is_empty():
+-		player_scores[_network_id] += 1
+-
+-	if not finished_players.has(_network_id):
+-		finished_players.append(_network_id)
+-
+-	check_game_end()
+-
+-func _on_player_died(_network_id: int):
+-
+-	if active_players.has(_network_id):
+-		active_players.erase(_network_id)
+-
+-	check_game_end()
+-
+-func _on_player_halfway(_network_id: int):
+-
+-	if not halfway_done_players.has(_network_id):
+-		halfway_done_players.append(_network_id)
+-		player_scores[_network_id] += 1
+-
+-func _on_countdown_tick(time_left: int):
+-	super._on_countdown_tick(time_left)
+-
+-	if time_left == 1:
+-		coach_handler.stop_reading_fakeout_rpc.rpc()
+-
+-func _on_countdown_expired():
+-	super._on_countdown_expired()
+-
+-	coach_handler.activate()
+-
+-	for player in player_characters.values():
+-		player.set_active_rpc.rpc(true)
+-
+-	ach_timer = ach_duration
+-	ach_active = true
+-
+-	state_machine.transition_to_rpc.rpc(&"Play")
++extends Minigame
++
++class_name GreenPeaMinigame
++
++const player_scene = preload("uid://cyhptkj072mxh")
++
++@export_category("States")
++@export var countdown_state: State
++
++@export_category("Components")
++@export var coach_handler: GreenPeaCoachHandler
++
++@export_category("Networked")
++@export var player_spawn_parent: Node3D
++@export var player_spawn_positions: Node3D
++
++@export_category("Nodes")
++@export var camera: Camera3D
++
++@export var ambience_speaker_controllers: Array[SpeakerController]
++
++var players: Array[GreenPeaPlayer]
++var player_characters: Dictionary[int, GreenPeaPlayer]
++var finished_players: Array[int]
++var active_players: Array[int]
++
++var halfway_done_players: Array[int]
++var player_scores: Dictionary[int, int]
++
++var finished: bool = false
++
++
++
++var ach_timer: float = 0.0
++var ach_duration: float = 20.0
++var ach_active: bool = false
++
++func _ready() -> void :
++	super._ready()
++
++	camera.current = true
++
++	if multiplayer.is_server():
++
++		countdown_state.countdown_started.connect(_on_countdown_started)
++		countdown_state.tick.connect(_on_countdown_tick)
++		countdown_state.expired.connect(_on_countdown_expired)
++
++	if GameManager.local_game:
++
++		await get_tree().create_timer(1.0).timeout
++		minigame_ready.emit(1)
++
++func _process(_delta: float) -> void :
++
++	if ach_active:
++		ach_timer = max(ach_timer - _delta, 0.0)
++		if ach_timer <= 0.0:
++			ach_active = false
++
++func fade_in_ambience():
++	for speaker_controller in ambience_speaker_controllers:
++		speaker_controller.speaker.volume_linear = 0
++		speaker_controller.fade_duration = 3
++		speaker_controller.fade_in_custom(db_to_linear(speaker_controller.original_volume_db), true)
++
++func all_players_loaded():
++	super.all_players_loaded()
++
++	if not multiplayer.is_server():
++		return
++
++	is_all_player_loaded = true
++	minigame_ready.emit(multiplayer.get_unique_id())
++
++func initialize(_round_number: int, _total_rounds: int, _scores: Dictionary = {}):
++	super.initialize(_round_number, _total_rounds, _scores)
++
++	spawn_players()
++	coach_handler.start_reading_rpc.rpc()
++	state_machine.transition_to_rpc.rpc(&"Round", {"round": _round_number, "total": _total_rounds})
++
++func spawn_players():
++
++
++	var counter: int = 0
++	_mod_setup_eight_seats()  # 8P MOD
++	for key in PlayerManager.player_presences.keys():
++
++		var player_presence: PlayerPresence = PlayerManager.player_presences[key]
++
++		var player_character = player_scene.instantiate()
++		player_spawn_parent.add_child(player_character, true)
++
++		player_character.set_player_presence.rpc(player_presence.network_id)
++		player_character.set_marker_camera_from_path_rpc.rpc(camera.get_path())
++		player_character.setup_rpc.rpc(
++			_mod_seat_position(counter),  # 8P MOD
++			player_spawn_positions.get_child(counter % 4).global_rotation,  # 8P MOD
++			counter
++		)
++		player_characters[player_presence.network_id] = player_character
++		player_character.finished.connect(_on_player_finished)
++		player_character.acted.connect(coach_handler._on_player_acted)
++		player_character.died.connect(_on_player_died)
++		player_character.halfway_done.connect(_on_player_halfway)
++
++		active_players.append(player_presence.network_id)
++
++		player_scores[player_presence.network_id] = 0
++
++		counter += 1
++
++	coach_handler.set_players(player_characters)
++
++
++# 8P MOD: seats 4-7 sit next to seats 0-3, further along the table (row z offset)
++const MOD_SEAT_SPACING: float = 1.2
++const MOD_CHAIR_NARROW: float = 0.6
++const MOD_CAMERA_PULLBACK: float = 2.5
++const MOD_CAMERA_FOV: float = 50.0
++
++func _mod_seat_position(seat: int) -> Vector3:
++	var base: Node3D = player_spawn_positions.get_child(seat % 4)
++	var pos: Vector3 = base.global_position
++	if seat >= 4:
++		# marker 0/1 are the +z end seats (row 1.22/1.35), marker 2/3 the -z end seats
++		var dir: float = 1.0 if (seat % 4) < 2 else -1.0
++		pos.z += dir * MOD_SEAT_SPACING
++	return pos
++
++func _mod_setup_eight_seats() -> void:
++	if PlayerManager.player_presences.size() <= 4:
++		return
++	var walls: Node = null
++	var node: Node = camera
++	while node and walls == null:
++		walls = node.get_node_or_null("pea dinner scene4/walls")
++		node = node.get_parent()
++	if walls == null:
++		push_warning("[8P MOD] green_pea: chair parent not found")
++		return
++	var chairs: Array = []
++	for c in walls.get_children():
++		if String(c.name).begins_with("chair player"):
++			chairs.append(c)
++	var originals: Array = chairs.duplicate()
++	for seat in range(4, 8):
++		var base: Node3D = player_spawn_positions.get_child(seat - 4)
++		var near: Node3D = null
++		for c in originals:
++			if near == null or c.global_position.distance_to(base.global_position) < near.global_position.distance_to(base.global_position):
++				near = c
++		if near == null:
++			continue
++		var dup: Node3D = near.duplicate()
++		dup.name = "Chair8P_%d" % seat
++		walls.add_child(dup)
++		dup.global_position = near.global_position + (_mod_seat_position(seat) - base.global_position)
++		dup.visible = true
++		chairs.append(dup)
++	for c in chairs:
++		var b: Basis = c.transform.basis
++		b.z *= MOD_CHAIR_NARROW
++		c.transform.basis = b
++	# widen framing so the end seats are visible
++	var rig: Node3D = camera.get_parent().get_parent()
++	rig.position += rig.transform.basis.z * MOD_CAMERA_PULLBACK
++	camera.fov = MOD_CAMERA_FOV
++
++func initialize_debug_specifics():
++	super.initialize_debug_specifics()
++
++
++func check_game_end():
++
++	if finished:
++		return
++
++	if active_players.size() > 0:
++		return
++
++	finished = true
++
++	player_scores_finalized.emit(player_scores)
++
++	await get_tree().create_timer(3.0).timeout
++	set_minigame_sfx_linear_volume_rpc.rpc(0.0)
++
++	state_machine.transition_to_rpc.rpc(&"Finished")
++	set_effects_visibility_rpc.rpc(false)
++
++
++
++@rpc("any_peer", "call_local", "reliable")
++func remove_player_rpc(_network_id: int):
++
++	var player_instance = player_characters.get(_network_id, null)
++
++	if player_instance:
++		players.erase(player_instance)
++		player_characters[_network_id].queue_free()
++		player_characters.erase(_network_id)
++
++	active_players.erase(_network_id)
++
++
++
++func player_disconnected(_network_id: int):
++	super.player_disconnected(_network_id)
++
++	if not multiplayer.is_server():
++		return
++
++	remove_player_rpc.rpc(_network_id)
++
++	await get_tree().create_timer(1.0).timeout
++
++	if multiplayer.is_server():
++		check_game_end()
++
++func _on_player_finished(_network_id: int):
++
++	if player_characters.has(_network_id):
++		if ach_active:
++			player_characters[_network_id].trigger_achievement_rpc.rpc()
++
++	if active_players.has(_network_id):
++
++		player_scores[_network_id] += 1
++		active_players.erase(_network_id)
++
++	if finished_players.is_empty():
++		player_scores[_network_id] += 1
++
++	if not finished_players.has(_network_id):
++		finished_players.append(_network_id)
++
++	check_game_end()
++
++func _on_player_died(_network_id: int):
++
++	if active_players.has(_network_id):
++		active_players.erase(_network_id)
++
++	check_game_end()
++
++func _on_player_halfway(_network_id: int):
++
++	if not halfway_done_players.has(_network_id):
++		halfway_done_players.append(_network_id)
++		player_scores[_network_id] += 1
++
++func _on_countdown_tick(time_left: int):
++	super._on_countdown_tick(time_left)
++
++	if time_left == 1:
++		coach_handler.stop_reading_fakeout_rpc.rpc()
++
++func _on_countdown_expired():
++	super._on_countdown_expired()
++
++	coach_handler.activate()
++
++	for player in player_characters.values():
++		player.set_active_rpc.rpc(true)
++
++	ach_timer = ach_duration
++	ach_active = true
++
++	state_machine.transition_to_rpc.rpc(&"Play")

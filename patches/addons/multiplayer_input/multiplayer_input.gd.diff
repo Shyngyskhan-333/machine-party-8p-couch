@@ -1,0 +1,40 @@
+--- a/addons/multiplayer_input/multiplayer_input.gd
++++ b/addons/multiplayer_input/multiplayer_input.gd
+@@ -25,6 +25,9 @@
+ 
+ 
+ var ignored_guids = []
++
++# 8P MOD: fake devices registered by the lobby's F8 debug fill.
++var debug_devices: Array[int] = []
+ 
+ signal initialized()
+ 
+@@ -54,10 +57,15 @@
+ 	for action in core_actions:
+ 		for e in InputMap.action_get_events(action):
+ 			if _is_joypad_event(e) and !is_ui_action(action):
+-				e.device = 8
++				e.device = 99
+ 
+ 	for device_id in Input.get_connected_joypads():
+ 		_create_actions_for_device(device_id)
++
++	# 8P MOD: initialize() wipes every per-device action (set_ui_action_device
++	# calls it again on join); re-create them for the F8 debug bots.
++	for d in debug_devices:
++		_create_actions_for_device(d)
+ 
+ 
+ 
+@@ -113,7 +121,9 @@
+ 	for action in InputMap.get_actions():
+ 		var action_str = String(action)
+ 		var maybe_device = action_str.substr(0, device_num_str.length())
+-		if maybe_device == device_num_str:
++		# 8P MOD: only an exact device-number prefix; "1" must not match "10move".
++		var next_char = action_str.substr(device_num_str.length(), 1)
++		if maybe_device == device_num_str and not next_char.is_valid_int():
+ 			actions_to_erase.append(action)
+ 
+ 

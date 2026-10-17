@@ -1,0 +1,51 @@
+--- a/minigames/disco_dodge/scrips/disco_dodge.gd
++++ b/minigames/disco_dodge/scrips/disco_dodge.gd
+@@ -4,6 +4,8 @@
+ 
+ const player_scene = preload("res://minigames/disco_dodge/components/player/disco_dodge_player.tscn")
+ const tile_scene = preload("res://minigames/disco_dodge/components/tile/disco_dodge_tile.tscn")
++
++const SpawnHelper = preload("res://mod8p/spawn_helper.gd") # 8P MOD
+ 
+ const tile_colors: Array[Color] = [
+ 	Color("#4deeea"), 
+@@ -81,8 +83,31 @@
+ 
+ var ach_tile_limit: int = 10
+ 
++# 8P MOD: the scene ships 4 spawn markers on the centre 2x2 tiles (+-2, +-2).
++# Tiles are 4 units wide and spawn AFTER the players, so SpawnHelper's floor
++# raycast would find nothing; instead add 4 more markers on the neighbouring
++# tile centres (+-6, +-2) so each of the 8 players starts on its own tile.
++const MOD_EXTRA_MARKERS: Array[Vector3] = [
++	Vector3(-6, 0, -2), Vector3(6, 0, -2), Vector3(6, 0, 2), Vector3(-6, 0, 2),
++]
++
++func _mod_extend_markers(count: int) -> void :
++	var n: int = player_spawn_positions_node.get_child_count()
++	var i: int = 0
++	while n < count:
++		var m := Marker3D.new()
++		m.name = "Spawn8P_%d" % n
++		player_spawn_positions_node.add_child(m)
++		m.position = MOD_EXTRA_MARKERS[i % MOD_EXTRA_MARKERS.size()] + Vector3(0, 0, 0)
++		if i >= MOD_EXTRA_MARKERS.size():
++			m.position += Vector3(0, 0, 4.0 * float(i / MOD_EXTRA_MARKERS.size())) # safety only
++		n += 1
++		i += 1
++
+ func _ready() -> void :
+ 	super._ready()
++
++	SpawnHelper.raise_spawn_limits(self, 8) # 8P MOD: PlayerSpawner.spawn_limit = 4 in the tscn
+ 
+ 	if multiplayer.is_server():
+ 
+@@ -130,6 +155,7 @@
+ 
+ func spawn_players():
+ 
++	_mod_extend_markers(PlayerManager.player_presences.size()) # 8P MOD
+ 	var player_spawn_positions = player_spawn_positions_node.get_children()
+ 	player_spawn_positions.shuffle()
+ 

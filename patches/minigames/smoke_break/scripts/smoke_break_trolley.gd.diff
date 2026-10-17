@@ -1,0 +1,37 @@
+--- a/minigames/smoke_break/scripts/smoke_break_trolley.gd
++++ b/minigames/smoke_break/scripts/smoke_break_trolley.gd
+@@ -21,6 +21,14 @@
+ @export var fire_audio_player: AudioStreamPlayer3D
+ 
+ var smoke_particle_active_index = -1
++
++# 8P MOD: aim angles for seats 4-7 (from the v2.1.2 reference scene).
++func _ready() -> void :
++	if rot_by_seat_index_array.size() < 8:
++		var extended: Array[Vector3] = rot_by_seat_index_array.duplicate()
++		for a in [-68.07, -44.0, 3.75, 31.88]:
++			extended.append(Vector3(a, 0, 0))
++		rot_by_seat_index_array = extended
+ 
+ @rpc("any_peer", "call_local", "reliable")
+ func eliminate_players_routine_rpc(player_seats_to_eliminate):
+@@ -53,7 +61,8 @@
+ 	anim_revolver_firing.play("fire")
+ 	fire_audio_player.stop()
+ 	fire_audio_player.play(0.0)
+-	particles_smoke[smoke_particle_active_index].emitting = true
++	# 8P MOD: only 4 puffs exist; wrap
++	particles_smoke[smoke_particle_active_index % particles_smoke.size()].emitting = true
+ 	shaker_trolley.force_stop_shake()
+ 	shaker_trolley.play_shake()
+ 
+@@ -68,6 +77,8 @@
+ 
+ 	player_to_shoot.anim_handler.get_eliminated()
+ 	player_to_shoot.anim_handler.show_blood_on_player()
+-	blood_decals_by_seat_index_array[player_to_shoot.active_player_seat_index].visible = true
++	# 8P MOD: decals exist for seats 0-3 only (cosmetic)
++	if player_to_shoot.active_player_seat_index < blood_decals_by_seat_index_array.size():
++		blood_decals_by_seat_index_array[player_to_shoot.active_player_seat_index].visible = true
+ 	if player_to_shoot.active_player_seat_index in [1, 2]:
+ 		blood_decal_fan.visible = true

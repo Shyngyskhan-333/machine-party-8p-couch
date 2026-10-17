@@ -1,0 +1,94 @@
+--- a/minigames/spine_breaker/scripts/spine_breaker.gd
++++ b/minigames/spine_breaker/scripts/spine_breaker.gd
+@@ -24,6 +24,34 @@
+ 
+ var playing: bool = false
+ 
++# 8P MOD: kill pace scaling (from the v2.1.2 ref). Vanilla needs 3 kills at 4 players;
++# at 8 players 7 kills would make the round ~2x longer, so fuse and dead time are scaled
++# by 3/(players-1), clamped to 1.0 (1-4 players are unchanged).
++const MOD_VANILLA_KILLS: float = 3.0
++const MOD_VANILLA_DEAD_TIME: float = 3.0
++var _mod_vanilla_fuse: float = -1.0
++
++func _mod_pace_factor() -> float:
++	return clampf(MOD_VANILLA_KILLS / float(maxi(player_count - 1, 1)), 0.0, 1.0)
++
++# 8P MOD: returns a position near base_pos that has floor beneath it and a clear
++# horizontal line from base_pos (so extra spawns do not land inside walls/props).
++func _mod_extra_spawn(base: Node3D, index: int) -> Vector3:
++	var space := base.get_world_3d().direct_space_state
++	var base_pos: Vector3 = base.global_position
++	for radius in [2.0, 1.4, 2.6, 0.9]:
++		for k in 8:
++			var angle := float(index) * PI * 0.5 + float(k) * PI * 0.25
++			var cand: Vector3 = base_pos + Vector3(sin(angle) * radius, 0.0, cos(angle) * radius)
++			var floor_q := PhysicsRayQueryParameters3D.create(cand + Vector3.UP * 3.0, cand + Vector3.DOWN * 6.0)
++			if space.intersect_ray(floor_q).is_empty():
++				continue
++			var wall_q := PhysicsRayQueryParameters3D.create(base_pos + Vector3.UP * 0.8, cand + Vector3.UP * 0.8)
++			if not space.intersect_ray(wall_q).is_empty():
++				continue
++			return cand
++	return base_pos
++
+ func _ready() -> void :
+ 	super._ready()
+ 
+@@ -36,6 +64,10 @@
+ 		countdown_state.expired.connect(_on_countdown_expired)
+ 
+ 		device.request_new_target.connect(_on_device_requested_target)
++
++	# 8P MOD: remember the shipped fuse before it is scaled
++	if device != null:
++		_mod_vanilla_fuse = device.activation_duration
+ 
+ 	if GameManager.local_game:
+ 		await get_tree().create_timer(1.0).timeout
+@@ -96,11 +128,22 @@
+ 
+ 	player_count = PlayerManager.player_presences.size()
+ 
++	# 8P MOD: level has 4 markers; build extra [position, rotation_degrees] slots for 5-8.
++	var mod_slots: Array = []
++	for m in spawn_positions:
++		mod_slots.append([m.global_position, m.rotation_degrees])
++	var mod_base: int = spawn_positions.size()
++	var mod_k: int = 0
++	while mod_base > 0 and mod_slots.size() < player_count:
++		var base_node: Node3D = spawn_positions[mod_k % mod_base]
++		mod_slots.append([_mod_extra_spawn(base_node, mod_slots.size()), base_node.rotation_degrees])
++		mod_k += 1
++
+ 	for i in PlayerManager.player_presences.size():
+ 		var network_id = PlayerManager.player_presences.keys()[i]
+ 
+-		var position: Vector3 = spawn_positions[i].global_position
+-		var rot: Vector3 = spawn_positions[i].rotation_degrees
++		var position: Vector3 = mod_slots[i][0]  # 8P MOD (was spawn_positions[i].global_position)
++		var rot: Vector3 = mod_slots[i][1]  # 8P MOD (was spawn_positions[i].rotation_degrees)
+ 		var player_character = player_scene.instantiate()
+ 		players_node.add_child(player_character, true)
+ 
+@@ -191,6 +234,10 @@
+ 
+ 	if active_players.size() <= 1:
+ 		return
++
++	# 8P MOD: scale the fuse to the roster (assign the member so the warning light follows)
++	if _mod_vanilla_fuse > 0.0:
++		device.activation_duration = _mod_vanilla_fuse * _mod_pace_factor()
+ 
+ 	var random_player = active_players.values().pick_random()
+ 
+@@ -216,7 +263,8 @@
+ 	if multiplayer.is_server():
+ 		device.laugh_rpc.rpc()
+ 
+-	await get_tree().create_timer(3.0).timeout
++	# 8P MOD: dead time scaled by the same factor (exactly 3.0 up to 4 players)
++	await get_tree().create_timer(MOD_VANILLA_DEAD_TIME * _mod_pace_factor()).timeout
+ 
+ 	choose_new_target()
+ 

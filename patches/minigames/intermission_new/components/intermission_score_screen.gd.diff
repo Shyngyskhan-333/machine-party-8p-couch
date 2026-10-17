@@ -1,0 +1,45 @@
+--- a/minigames/intermission_new/components/intermission_score_screen.gd
++++ b/minigames/intermission_new/components/intermission_score_screen.gd
+@@ -1,6 +1,9 @@
+ class_name Intermission_ScoreScreen extends Node
+ 
+-const rank_y_positions: Array[float] = [0.84, 0.325, -0.19, -0.705]
++# 8P MOD: eight rows; the scene ships four containers, four more are cloned.
++const MAX_SLOTS: int = 8
++const ROW_SCALE: float = 0.55
++const rank_y_positions: Array[float] = [0.98, 0.72, 0.46, 0.20, -0.06, -0.32, -0.58, -0.84]
+ 
+ @export_category("components")
+ @export var intermission_manager: IntermissionManager
+@@ -44,7 +47,31 @@
+ signal score_screen_finished()
+ signal score_screen_hidden()
+ 
++func expand_user_containers():
++
++	var template: Intermission_UserContainer = user_container_array[user_container_array.size() - 1]
++	var parent_node: Node = template.get_parent()
++	while user_container_array.size() < MAX_SLOTS:
++		var i := user_container_array.size()
++		var uc: Intermission_UserContainer = template.duplicate()
++		uc.name = "user info%d" % (i + 1)
++		uc.container_id = i
++		parent_node.add_child(uc)
++		user_container_array.append(uc)
++		score_container_nodes.append(uc)
++
++	var siblings: Array[Intermission_UserContainer] = []
++	for c in parent_node.get_children():
++		siblings.append(c)
++	for i in user_container_array.size():
++		var uc: Intermission_UserContainer = user_container_array[i]
++		uc.user_container_array = siblings.duplicate()
++		uc.scale = Vector3(ROW_SCALE, ROW_SCALE, ROW_SCALE)
++		uc.position.y = rank_y_positions[i]
++
+ func _ready() -> void :
++	expand_user_containers()
++
+ 	for typer in typers_start:
+ 		typer.letter_delay = letter_delay_for_typers
+ 

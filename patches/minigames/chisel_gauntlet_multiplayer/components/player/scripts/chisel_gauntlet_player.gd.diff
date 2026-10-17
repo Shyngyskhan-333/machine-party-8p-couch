@@ -1,0 +1,46 @@
+--- a/minigames/chisel_gauntlet_multiplayer/components/player/scripts/chisel_gauntlet_player.gd
++++ b/minigames/chisel_gauntlet_multiplayer/components/player/scripts/chisel_gauntlet_player.gd
+@@ -106,27 +106,29 @@
+ 
+ func setup_local_visuals(player_index: int):
+ 
+-	var starting_layer = 10 + (player_index * 2)
++	# 8P MOD: vanilla used 2 render layers per player (10 + idx*2), which runs past
++	# the 20 usable layers at 8 players. Now one bit per player (10..17):
++	# own first-person meshes live on b_i only; third-person meshes (and hats) live on
++	# every bit EXCEPT their owner's. Camera i sees only b_i (plus its default layers),
++	# so it sees its own arms and everyone else's bodies, but not its own body.
++	var own_bit: int = 10 + player_index
++	var third_person_mask: int = 0
++	for i in 8:
++		if i != player_index:
++			third_person_mask |= 1 << (10 + i)
+ 
+ 	visuals_third_person.visible = true
+ 	visuals_first_person.visible = true
+ 
+ 	for mesh in local_first_person_meshes:
+-		mesh.layers = 1 << starting_layer
+-
+-	local_camera.set_cull_mask_value(starting_layer + 1, true)
+-	local_camera.set_cull_mask_value(starting_layer + 1 + 1, false)
+-
+-	for i in 4:
+-		if i == player_index:
+-			continue
+-		var other_player_layer = 10 + (i * 2)
+-		local_camera.set_cull_mask_value(other_player_layer + 1 + 1, true)
+-
+-	customization_assigner.set_visibility_layer(1 << (starting_layer + 1))
++		mesh.layers = 1 << own_bit
++
++	local_camera.set_cull_mask_value(own_bit + 1, true)
++
++	customization_assigner.set_visibility_layer(third_person_mask)
+ 
+ 	for mesh in local_third_person_meshes:
+-		mesh.layers = 1 << (starting_layer + 1)
++		mesh.layers = third_person_mask
+ 
+ 
+ 

@@ -1,0 +1,108 @@
+--- a/scenes/local_lobby/scripts/local_lobby.gd
++++ b/scenes/local_lobby/scripts/local_lobby.gd
+@@ -2,7 +2,19 @@
+ 
+ class_name LocalLobby
+ 
+-const MAX_PLAYERS: int = 4
++const MAX_PLAYERS: int = 8
++
++# 8P MOD: the scene ships four seats (one row). Seats 4-7 are a second row, a
++# clone of seats 0-3 (same sitting pose) moved towards the camera and half a
++# row to the left, each with a clone of the chair it sits on.
++const SHIPPED_SEATS: int = 4
++const CONTROLS_SCENE = preload("res://scenes/local_lobby/components/local_lobby_player_controls.tscn")
++const MOCK_DEVICE_BASE: int = 100
++const FRONT_ROW_SHIFT: Vector3 = Vector3(-2.0, 0.0, 4.5)
++const FRONT_ROW_PANEL_SHIFT: Vector2 = Vector2(-40, 125)
++const SEAT_CHAIRS: Array[String] = ["chair_003", "chair_001", "chair_002", "chair_007"]
++const SEAT_PANEL_DEFAULTS: Array[Vector2] = [Vector2(190, 71), Vector2(345, 128), Vector2(446, 120), Vector2(576, 112)]
++
+ 
+ @export var players_node: Node3D
+ @export var local_lobby_player_controls: Array[LocalLobbyPlayerControls]
+@@ -50,6 +62,8 @@
+ 
+ func _ready():
+ 
++	expand_seats()
++
+ 	Globals.locale_changed.connect(check_if_locale_requires_vertical_adjustment)
+ 	check_if_locale_requires_vertical_adjustment()
+ 
+@@ -110,6 +124,63 @@
+ 	await GlobalOverlay.fade_finished
+ 
+ 	active = true
++
++func expand_seats():
++
++	var environment: Node3D = players_node.get_parent().get_node("lobby environment1")
++	var controls_parent: Control = local_lobby_player_controls[0].get_parent()
++
++	for seat in range(SHIPPED_SEATS, MAX_PLAYERS):
++
++		var source_seat := seat - SHIPPED_SEATS
++
++		var seat_3d: Node3D = players_node.get_child(source_seat).duplicate()
++		seat_3d.name = "Player%d" % (seat + 1)
++		seat_3d.visible = false
++		players_node.add_child(seat_3d)
++		seat_3d.position += FRONT_ROW_SHIFT
++
++		var chair: Node3D = environment.get_node(SEAT_CHAIRS[source_seat]).duplicate()
++		chair.name = "chair_8p_%d" % seat
++		chair.visible = true
++		environment.add_child(chair)
++		chair.position += FRONT_ROW_SHIFT
++
++		var controls: LocalLobbyPlayerControls = CONTROLS_SCENE.instantiate()
++		controls.name = "LocalPlayerLobbyControls%d" % (seat + 1)
++		controls.visible = false
++		controls.seat_index = seat
++		controls.extra_seat_position = SEAT_PANEL_DEFAULTS[source_seat] + FRONT_ROW_PANEL_SHIFT
++		controls.extra_name_y_shift = FRONT_ROW_PANEL_SHIFT.y
++		controls_parent.add_child(controls)
++		controls.customization_assigner = seat_3d.get_node("main character2/Armature_001/Skeleton3D/customization assigner")
++		controls.leave_button = leave_button
++		controls.playlist_button = playlist_button
++		controls.start_button = start_button
++		controls.skip_intro_button = skip_intro_button
++		local_lobby_player_controls.append(controls)
++
++func debug_fill_enabled() -> bool:
++	return OS.has_feature("debug") or OS.get_cmdline_user_args().has("-8pdebug") or OS.get_cmdline_args().has("-8pdebug")
++
++func debug_fill_players():
++
++	for seat in MAX_PLAYERS:
++		var device := MOCK_DEVICE_BASE + seat
++		if is_device_joined(device):
++			continue
++		if next_player() < 0:
++			return
++		if not MultiplayerInput.debug_devices.has(device):
++			MultiplayerInput.debug_devices.append(device)
++		MultiplayerInput._create_actions_for_device(device)
++		var seat_id := next_player()
++		join(device, true)
++		local_lobby_player_controls[seat_id]._on_name_confirmed("BOT%d" % (seat_id + 1))
++
++func debug_ready_all():
++	for seat_id in player_data.keys():
++		local_lobby_player_controls[seat_id].set_player_ready(true)
+ 
+ func try_rejoin_existing_players():
+ 
+@@ -220,6 +291,11 @@
+ 	handle_join_input()
+ 	handle_leave_input()
+ 
++	if debug_fill_enabled() and Input.is_physical_key_pressed(KEY_F8):
++		debug_fill_players()
++	if debug_fill_enabled() and Input.is_physical_key_pressed(KEY_F9):
++		debug_ready_all()
++
+ func fade_loading_screen():
+ 
+ 	var t = create_tween()

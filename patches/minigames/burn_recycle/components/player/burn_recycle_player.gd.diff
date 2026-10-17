@@ -1,0 +1,95 @@
+--- a/minigames/burn_recycle/components/player/burn_recycle_player.gd
++++ b/minigames/burn_recycle/components/player/burn_recycle_player.gd
+@@ -91,6 +91,13 @@
+ 
+ 
+ 
++# 8P MOD: which of the two rooms this player sits in (0 or 1).
++var mod_room: int = 0
++
++func mod_set_room(_room: int) -> void :
++	mod_room = _room
++	position = BurnRecycleMinigame.MOD_ROOM_OFFSET * float(_room)
++
+ var ach_invalid_inputs: int = 0
+ var ach_active: bool = true
+ 
+@@ -178,23 +185,26 @@
+ 	var wall_copy = game_instance.client_side_wall_mesh.duplicate()
+ 	add_child(wall_copy)
+ 	wall_copy.top_level = true
+-	wall_copy.global_position = Vector3.ZERO
++	# 8P MOD: wall follows the player's room; the seat (angle + cull layer) is
++	# the seat WITHIN the room, rooms never see each other so layers are reused.
++	var mod_seat_in_room: int = active_seat_index % BurnRecycleMinigame.MOD_SEATS_PER_ROOM
++	wall_copy.global_position = BurnRecycleMinigame.MOD_ROOM_OFFSET * float(mod_room)
+ 
+ 	wall_copy.visible = true
+ 	wall_copy.rotation_degrees = Vector3(
+-		0.0, 90.0 + (active_seat_index * 90.0), 0.0
++		0.0, 90.0 + (mod_seat_in_room * 90.0), 0.0
+ 	)
+ 	for c in wall_copy.get_children():
+ 		if c is MeshInstance3D:
+ 			c.set_layer_mask_value(1, false)
+-			c.set_layer_mask_value(active_seat_index + 2, true)
+-
+-	local_camera.set_cull_mask_value(active_seat_index + 2, true)
++			c.set_layer_mask_value(mod_seat_in_room + 2, true)
++
++	local_camera.set_cull_mask_value(mod_seat_in_room + 2, true)
+ 
+ func setup_clientside_visuals(_seat_counter: int):
+ 	await get_tree().create_timer(1, false).timeout
+ 	game_instance.clientside_visuals_parent.rotation_degrees = Vector3(
+-		0.0, visual_parent_rotations[_seat_counter], 0.0
++		0.0, visual_parent_rotations[_seat_counter % 4], 0.0 # 8P MOD
+ 	)
+ 
+ 	var index_to_enable_indicator_on = _seat_counter - 1
+@@ -242,32 +252,20 @@
+ func play_death_sound():
+ 	speaker_death.play()
+ 
++# 8P MOD: relationship form of the shipped 4x4 table (verified 16/16 at 4 seats):
++# target N seats round the room from me -> self/right/center/left. A target in
++# the other room has no meaningful direction, so the camera holds still.
++const MOD_LOOK_CLIPS: Array[String] = ["self", "right", "center", "left"]
++
+ func look_at_seat(_seat_index: int):
+-	var direction: String = "center"
+-
+-	match active_press.press_id:
+-		0:
+-			if _seat_index == 0: direction = "self"
+-			if _seat_index == 1: direction = "right"
+-			if _seat_index == 2: direction = "center"
+-			if _seat_index == 3: direction = "left"
+-		1:
+-			if _seat_index == 0: direction = "left"
+-			if _seat_index == 1: direction = "self"
+-			if _seat_index == 2: direction = "right"
+-			if _seat_index == 3: direction = "center"
+-		2:
+-			if _seat_index == 0: direction = "center"
+-			if _seat_index == 1: direction = "left"
+-			if _seat_index == 2: direction = "self"
+-			if _seat_index == 3: direction = "right"
+-		3:
+-			if _seat_index == 0: direction = "right"
+-			if _seat_index == 1: direction = "center"
+-			if _seat_index == 2: direction = "left"
+-			if _seat_index == 3: direction = "self"
+-
+-	anim_camera_movement.play("look " + direction)
++	var seats: int = BurnRecycleMinigame.MOD_SEATS_PER_ROOM
++	var my_seat: int = active_press.press_id if active_press else 0
++
++	if (my_seat / seats) != (_seat_index / seats):
++		return
++
++	var rel: int = posmod(_seat_index - my_seat, seats)
++	anim_camera_movement.play("look " + MOD_LOOK_CLIPS[rel])
+ 
+ func move_piston():
+ 

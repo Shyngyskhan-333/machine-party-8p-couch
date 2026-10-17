@@ -1,0 +1,258 @@
+--- a/minigames/green_pea/components/coach_handler/green_pea_coach.gd
++++ b/minigames/green_pea/components/coach_handler/green_pea_coach.gd
+@@ -1,127 +1,128 @@
+-class_name GreenPeaCoach extends Node3D
+-
+-@export var player_spawn_parent: Node3D
+-
+-@export var anim_coach: AnimationPlayer
+-@export var anim_tree_coach: AnimationTree
+-
+-@export var anim_deagle_slide: AnimationPlayer
+-
+-@export var players: Array[GreenPeaPlayer]
+-
+-@export var anim_gun_fire: AnimationPlayer
+-@export var shaker_camera: ShakerComponent3D
+-
+-@export var decals_by_seat_index: Array[Node3D]
+-
+-@export var speaker_ready_up: AudioStreamPlayer
+-@export var speaker_drone: AudioStreamPlayer
+-@export var speaker_shoot: AudioStreamPlayer
+-@export var speaker_slide_release: AudioStreamPlayer
+-@export var speaker_newspaper: AudioStreamPlayer
+-
+-@export var sounds_newspaper: Array[AudioStream]
+-
+-signal execution_finished()
+-
+-var is_first_newspaper_sound = true
+-
+-func _ready() -> void :
+-	anim_coach.play("coach_reading_newspaper_idle_2")
+-
+-
+-func stop_reading():
+-
+-	var tween = create_tween().set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
+-	tween.tween_property(anim_tree_coach, "parameters/reading blend/blend_amount", 1, 0.5)
+-	play_newspaper_sound()
+-
+-
+-func start_reading():
+-
+-	var tween = create_tween().set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
+-	tween.tween_property(anim_tree_coach, "parameters/reading blend/blend_amount", 0, 0.6)
+-	play_newspaper_sound()
+-
+-
+-func stop_reading_fakeout():
+-
+-	var tween1 = create_tween().set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
+-	tween1.tween_property(anim_tree_coach, "parameters/reading blend/blend_amount", 0.7, 0.3)
+-	await get_tree().create_timer(0.2, false).timeout
+-	var tween2 = create_tween().set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
+-	tween2.tween_property(anim_tree_coach, "parameters/reading blend/blend_amount", 0, 0.3)
+-	play_newspaper_sound()
+-
+-func play_newspaper_sound():
+-	if !is_first_newspaper_sound:
+-		speaker_newspaper.pitch_scale = randf_range(0.95, 1.05)
+-		speaker_newspaper.stream = sounds_newspaper.pick_random()
+-		speaker_newspaper.play()
+-	is_first_newspaper_sound = false
+-
+-func shoot_player(seat_position_to_shoot: int):
+-
+-	if multiplayer.is_server():
+-		pause_eating_for_players(seat_position_to_shoot)
+-
+-	speaker_ready_up.play()
+-
+-	speaker_drone.play()
+-	anim_coach.play("coach_deagle_ready_up")
+-	anim_tree_coach.active = false
+-	anim_coach.play("coach_deagle_ready_up", 0.5)
+-	await get_tree().create_timer(1.1, false).timeout
+-
+-	var anim_name = "coach_shoot_position_" + str(seat_position_to_shoot)
+-	anim_coach.play(anim_name, 0.2)
+-	gun_shot_visuals(seat_position_to_shoot)
+-	await get_tree().create_timer(4, false).timeout
+-
+-	if multiplayer.is_server():
+-		continue_eating_for_players()
+-
+-	anim_tree_coach.set("parameters/reading blend/blend_amount", 0)
+-	anim_tree_coach.active = true
+-
+-	execution_finished.emit()
+-
+-func gun_shot_visuals(seat_position_to_shoot: int):
+-	await get_tree().create_timer(0.93, false).timeout
+-	deagle_slide_back()
+-	speaker_drone.stop()
+-	speaker_shoot.play()
+-
+-	if multiplayer.is_server():
+-		for player in players:
+-			if player and player.player_seat_position == seat_position_to_shoot:
+-				player.execute_rpc.rpc()
+-
+-	for player: GreenPeaPlayer in player_spawn_parent.get_children():
+-		if player.player_seat_position == seat_position_to_shoot:
+-			anim_gun_fire.play("shoot")
+-			shaker_camera.force_stop_shake()
+-			shaker_camera.play_shake()
+-			decals_by_seat_index[seat_position_to_shoot].visible = true
+-			player.blood_decal_parent.visible = true
+-
+-func pause_eating_for_players(position_being_shot: int):
+-	if multiplayer.is_server():
+-		for player in players:
+-			if player and !player.is_dead && player.player_seat_position != position_being_shot:
+-				player.pause_eating_rpc.rpc()
+-			await get_tree().create_timer(randf_range(0, 0.3)).timeout
+-
+-func continue_eating_for_players():
+-
+-	if multiplayer.is_server():
+-		for player in players:
+-			player.continue_eating_rpc.rpc()
+-			await get_tree().create_timer(randf_range(0, 0.3)).timeout
+-
+-func deagle_slide_forward():
+-	anim_deagle_slide.play("forward")
+-	speaker_slide_release.play()
+-
+-func deagle_slide_back():
+-	anim_deagle_slide.play("back")
++class_name GreenPeaCoach extends Node3D
++
++@export var player_spawn_parent: Node3D
++
++@export var anim_coach: AnimationPlayer
++@export var anim_tree_coach: AnimationTree
++
++@export var anim_deagle_slide: AnimationPlayer
++
++@export var players: Array[GreenPeaPlayer]
++
++@export var anim_gun_fire: AnimationPlayer
++@export var shaker_camera: ShakerComponent3D
++
++@export var decals_by_seat_index: Array[Node3D]
++
++@export var speaker_ready_up: AudioStreamPlayer
++@export var speaker_drone: AudioStreamPlayer
++@export var speaker_shoot: AudioStreamPlayer
++@export var speaker_slide_release: AudioStreamPlayer
++@export var speaker_newspaper: AudioStreamPlayer
++
++@export var sounds_newspaper: Array[AudioStream]
++
++signal execution_finished()
++
++var is_first_newspaper_sound = true
++
++func _ready() -> void :
++	anim_coach.play("coach_reading_newspaper_idle_2")
++
++
++func stop_reading():
++
++	var tween = create_tween().set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
++	tween.tween_property(anim_tree_coach, "parameters/reading blend/blend_amount", 1, 0.5)
++	play_newspaper_sound()
++
++
++func start_reading():
++
++	var tween = create_tween().set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
++	tween.tween_property(anim_tree_coach, "parameters/reading blend/blend_amount", 0, 0.6)
++	play_newspaper_sound()
++
++
++func stop_reading_fakeout():
++
++	var tween1 = create_tween().set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
++	tween1.tween_property(anim_tree_coach, "parameters/reading blend/blend_amount", 0.7, 0.3)
++	await get_tree().create_timer(0.2, false).timeout
++	var tween2 = create_tween().set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
++	tween2.tween_property(anim_tree_coach, "parameters/reading blend/blend_amount", 0, 0.3)
++	play_newspaper_sound()
++
++func play_newspaper_sound():
++	if !is_first_newspaper_sound:
++		speaker_newspaper.pitch_scale = randf_range(0.95, 1.05)
++		speaker_newspaper.stream = sounds_newspaper.pick_random()
++		speaker_newspaper.play()
++	is_first_newspaper_sound = false
++
++func shoot_player(seat_position_to_shoot: int):
++
++	if multiplayer.is_server():
++		pause_eating_for_players(seat_position_to_shoot)
++
++	speaker_ready_up.play()
++
++	speaker_drone.play()
++	anim_coach.play("coach_deagle_ready_up")
++	anim_tree_coach.active = false
++	anim_coach.play("coach_deagle_ready_up", 0.5)
++	await get_tree().create_timer(1.1, false).timeout
++
++	# 8P MOD: only 4 shoot animations exist; seats 4-7 reuse the one of the nearest vanilla seat (seat % 4)
++	var anim_name = "coach_shoot_position_" + str(seat_position_to_shoot % 4)
++	anim_coach.play(anim_name, 0.2)
++	gun_shot_visuals(seat_position_to_shoot)
++	await get_tree().create_timer(4, false).timeout
++
++	if multiplayer.is_server():
++		continue_eating_for_players()
++
++	anim_tree_coach.set("parameters/reading blend/blend_amount", 0)
++	anim_tree_coach.active = true
++
++	execution_finished.emit()
++
++func gun_shot_visuals(seat_position_to_shoot: int):
++	await get_tree().create_timer(0.93, false).timeout
++	deagle_slide_back()
++	speaker_drone.stop()
++	speaker_shoot.play()
++
++	if multiplayer.is_server():
++		for player in players:
++			if player and player.player_seat_position == seat_position_to_shoot:
++				player.execute_rpc.rpc()
++
++	for player: GreenPeaPlayer in player_spawn_parent.get_children():
++		if player.player_seat_position == seat_position_to_shoot:
++			anim_gun_fire.play("shoot")
++			shaker_camera.force_stop_shake()
++			shaker_camera.play_shake()
++			decals_by_seat_index[seat_position_to_shoot % 4].visible = true  # 8P MOD: only 4 decal sets
++			player.blood_decal_parent.visible = true
++
++func pause_eating_for_players(position_being_shot: int):
++	if multiplayer.is_server():
++		for player in players:
++			if player and !player.is_dead && player.player_seat_position != position_being_shot:
++				player.pause_eating_rpc.rpc()
++			await get_tree().create_timer(randf_range(0, 0.3)).timeout
++
++func continue_eating_for_players():
++
++	if multiplayer.is_server():
++		for player in players:
++			player.continue_eating_rpc.rpc()
++			await get_tree().create_timer(randf_range(0, 0.3)).timeout
++
++func deagle_slide_forward():
++	anim_deagle_slide.play("forward")
++	speaker_slide_release.play()
++
++func deagle_slide_back():
++	anim_deagle_slide.play("back")

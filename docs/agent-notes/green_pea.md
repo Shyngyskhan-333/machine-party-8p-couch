@@ -1,0 +1,7 @@
+# green_pea (8P) - status: done (cosmetic compromises, unverified in-game)
+Files: overlay/minigames/green_pea/scripts/green_pea.gd, overlay/minigames/green_pea/components/coach_handler/green_pea_coach.gd
+- green_pea.gd: spawn_players() calls _mod_setup_eight_seats() when >4 players: clones the 4 chair meshes (nearest chair to markers 0-3, shifted 1.2 along z, +z for markers 0/1, -z for markers 2/3), narrows all chairs' local z to 0.6, pulls camera rig back 2.5 and sets fov 50 (same numbers as ref mod). Seat n>=4 position = marker[n%4] shifted 1.2 in z, rotation of marker[n%4]. No tscn edits; no SpawnHelper (the table geometry needs a fixed row offset, not a floor search). Runs locally only (no RPC, local mode is one process).
+- green_pea_coach.gd: only 4 coach shoot animations and 4 blood decal sets exist -> seat n uses animation/decal n%4 (coach aims at the neighbouring vanilla seat for seats 4-7; blood decal appears at the vanilla seat's wall spot). Without this, seats 4-7 hit a missing animation / OOB array.
+- Scoring/win logic uses dictionaries keyed by network_id: fine for 8. No spawn_limit on this MultiplayerSpawner.
+- Unverified: chair clones fit the table (table length not checked), camera framing, execution aim for seats 4-7 is visually off by ~1.2m. pause/continue_eating loops await up to 0.3s per player (up to ~2.4s total at 8), harmless.
+- Requires player_presence.network_id unique per local player (lead).

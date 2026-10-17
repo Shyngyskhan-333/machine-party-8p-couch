@@ -1,0 +1,44 @@
+--- a/minigames/chisel_gauntlet_multiplayer/scripts/chisel_gauntlet_local_handler.gd
++++ b/minigames/chisel_gauntlet_multiplayer/scripts/chisel_gauntlet_local_handler.gd
+@@ -45,6 +45,41 @@
+ 		[Vector2(0.5, 0.0), Vector2(0.5, 0.5)], 
+ 		[Vector2(0.0, 0.5), Vector2(0.5, 0.5)], 
+ 		[Vector2(0.5, 0.5), Vector2(0.5, 0.5)], 
++	], 
++	# 8P MOD: 5-6 players use a 3x2 grid, 7-8 a 4x2 grid
++	5: [
++		[Vector2(0.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(1.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(2.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(0.0 / 3.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(1.0 / 3.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++	], 
++	6: [
++		[Vector2(0.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(1.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(2.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(0.0 / 3.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(1.0 / 3.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(2.0 / 3.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++	], 
++	7: [
++		[Vector2(0.0 / 4.0, 0.0), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(1.0 / 4.0, 0.0), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(2.0 / 4.0, 0.0), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(3.0 / 4.0, 0.0), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(0.0 / 4.0, 0.5), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(1.0 / 4.0, 0.5), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(2.0 / 4.0, 0.5), Vector2(1.0 / 4.0, 0.5)], 
++	], 
++	8: [
++		[Vector2(0.0 / 4.0, 0.0), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(1.0 / 4.0, 0.0), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(2.0 / 4.0, 0.0), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(3.0 / 4.0, 0.0), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(0.0 / 4.0, 0.5), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(1.0 / 4.0, 0.5), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(2.0 / 4.0, 0.5), Vector2(1.0 / 4.0, 0.5)], 
++		[Vector2(3.0 / 4.0, 0.5), Vector2(1.0 / 4.0, 0.5)], 
+ 	], 
+ }
+ 

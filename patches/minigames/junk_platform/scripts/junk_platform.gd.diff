@@ -1,0 +1,23 @@
+--- a/minigames/junk_platform/scripts/junk_platform.gd
++++ b/minigames/junk_platform/scripts/junk_platform.gd
+@@ -77,6 +77,20 @@
+ 	var spawn_positions: Array[Transform3D]
+ 	for p in player_spawn_position_node.get_children():
+ 		spawn_positions.append(p.global_transform)
++	# 8P MOD: the level ships 4 markers, one on each platform centre (deck radius 6).
++	# Extra players get a clone of a marker shifted 2.0 along its local X, on the same
++	# deck. Same facing, so local-mode camera/visual rotation is unchanged.
++	var mod_base_count: int = spawn_positions.size()
++	var mod_k: int = 0
++	while mod_base_count > 0 and spawn_positions.size() < player_count:
++		var base_t: Transform3D = spawn_positions[mod_k % mod_base_count]
++		var side: float = 2.0 if (mod_k / mod_base_count) % 2 == 0 else -2.0
++		base_t.origin += base_t.basis.x * side
++		spawn_positions.append(base_t)
++		mod_k += 1
++	# 8P MOD: more players drop more junk per tick; allow a larger recycled pool.
++	if player_count > 4:
++		junk_handler.max_junk = maxi(junk_handler.max_junk, 10 * player_count)
+ 	if GameManager.local_game:
+ 		spawn_positions.shuffle()
+ 

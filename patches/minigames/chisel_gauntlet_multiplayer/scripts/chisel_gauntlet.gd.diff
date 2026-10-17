@@ -1,0 +1,84 @@
+--- a/minigames/chisel_gauntlet_multiplayer/scripts/chisel_gauntlet.gd
++++ b/minigames/chisel_gauntlet_multiplayer/scripts/chisel_gauntlet.gd
+@@ -14,7 +14,8 @@
+ 
+ @export_category("Shared Parameters")
+ @export var player_rotations: Array[float] = [
+-	0.0, 180.0, 90.0, -90
++	0.0, 180.0, 90.0, -90.0,
++	45.0, -135.0, 135.0, -45.0 # 8P MOD: seats 5-8 sit between the 4 desks, 45 degrees apart
+ ]
+ 
+ @export_category("Game Parameters")
+@@ -81,6 +82,29 @@
+ 
+ 
+ var shotgun_check_order: Array[int] = [0, 2, 1, 3]
++# 8P MOD: clockwise sweep by angle over 8 facings (idx 0=0 4=45 2=90 6=135 1=180 5=225 3=270 7=315).
++# Only used when more than 4 players, otherwise empty slots would slow the gun down.
++const MOD_CHECK_ORDER_8: Array[int] = [0, 4, 2, 6, 1, 5, 3, 7]
++const MOD_VANILLA_STATIONS: int = 4
++# 8P MOD: station geometry sits on the Y axis and differs only by Y rotation; a copy turned
++# 45 degrees lands between two existing stations.
++const MOD_STATION_NODES: Array[String] = [
++	"chisel gauntlet art2/walls/control panel alpha",
++	"chisel gauntlet art2/walls/control panel bravo",
++	"chisel gauntlet art2/walls/control panel charlie",
++	"chisel gauntlet art2/walls/control panel delta",
++	"Colliders/StaticBody3D",
++	"Colliders/StaticBody3D2",
++	"Colliders/StaticBody3D3",
++	"Colliders/StaticBody3D4",
++	"chisel gauntlet art2/control panel hole mesh",
++	"chisel gauntlet art2/control panel hole wires",
++]
++# Barrels clip the 135 degree slot's character; hidden only when 5+ players.
++const MOD_HIDE_PROPS: Array[String] = [
++	"chisel gauntlet art2/walls/barrel_001",
++	"chisel gauntlet art2/walls/barrel_002",
++]
+ 
+ var first_round: bool = true
+ var round_time_remaining: int
+@@ -111,6 +135,10 @@
+ 
+ 	for p in spectate_position_parent.get_children():
+ 		spectate_positions.append(p.global_position)
++	# 8P MOD: scene ships 4 spectate markers (all at the same point); repeat them up to 8
++	var _mod_n: int = spectate_positions.size()
++	while _mod_n > 0 and spectate_positions.size() < 8:
++		spectate_positions.append(spectate_positions[spectate_positions.size() % _mod_n])
+ 
+ 	spawn_players()
+ 
+@@ -190,6 +218,10 @@
+ 
+ 
+ 	player_count = PlayerManager.player_presences.size()
++	# 8P MOD: 5-8 players need extra desks and the full 8-slot shotgun sweep
++	if player_count > MOD_VANILLA_STATIONS:
++		shotgun_check_order = MOD_CHECK_ORDER_8
++		_mod_add_stations()
+ 	var counter: int = 0
+ 	for key in PlayerManager.player_presences.keys():
+ 
+@@ -423,3 +455,19 @@
+ 			eliminate_players[k] = active_players[k]
+ 
+ 	state_machine.transition_to_rpc(&"RoundEliminate")
++
++# 8P MOD: duplicate the four stations rotated 45 degrees so seats 5-8 have desks.
++func _mod_add_stations() -> void:
++	for path in MOD_STATION_NODES:
++		var node := get_node_or_null(path)
++		if node is Node3D:
++			var copy: Node3D = node.duplicate()
++			copy.name = node.name + "_MOD"
++			node.get_parent().add_child(copy)
++			copy.rotate_y(deg_to_rad(45.0))
++	for path in MOD_HIDE_PROPS:
++		var prop := get_node_or_null(path)
++		if prop:
++			prop.visible = false
++			for body in prop.find_children("*", "CollisionObject3D", true, false):
++				body.process_mode = Node.PROCESS_MODE_DISABLED

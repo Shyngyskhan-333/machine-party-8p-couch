@@ -1,0 +1,25 @@
+--- a/minigames/duck_hunt/components/hunter_player/scripts/hunter_player.gd
++++ b/minigames/duck_hunt/components/hunter_player/scripts/hunter_player.gd
+@@ -23,12 +23,22 @@
+ 	1: 7, 
+ 	2: 8, 
+ 	3: 10, 
++	# 8P MOD: 5-8 players means 4-7 ducks; vanilla fell back to 7 shells
++	4: 12, 
++	5: 14, 
++	6: 16, 
++	7: 18, 
+ }
+ @export var reload_speed_by_duck_count: Dictionary[int, float] = {
+ 	0: 0.95, 
+ 	1: 0.95, 
+ 	2: 0.9, 
+ 	3: 0.8, 
++	# 8P MOD
++	4: 0.7, 
++	5: 0.6, 
++	6: 0.55, 
++	7: 0.5, 
+ }
+ 
+ @export_category("Zoom")

@@ -1,0 +1,79 @@
+--- a/minigames/intermission_new/components/intermission_briefing_screen.gd
++++ b/minigames/intermission_new/components/intermission_briefing_screen.gd
+@@ -15,7 +15,12 @@
+ 
+ var active_total_score_by_network_id: Dictionary[int, int]
+ 
+-var rank_y_positions: Array[float] = [0, 19, 38, 57]
++# 8P MOD: eight rows, tighter and scaled so they still fit above the READY area.
++const MAX_SLOTS: int = 8
++const ROW_SPACING: float = 12.2
++const ROW_SCALE: float = 0.64
++const ROWS_TOP_SHIFT: float = -10.0
++var rank_y_positions: Array[float] = [0, 12.2, 24.4, 36.6, 48.8, 61.0, 73.2, 85.4]
+ 
+ @export var anim_page_button_blinking: AnimationPlayer
+ @export var anim_pagination_highlight: AnimationPlayer
+@@ -94,7 +99,31 @@
+ 
+ signal all_players_ready()
+ 
++func expand_user_containers():
++
++	var template: Intermission_UserContainer_2D = user_container_array[user_container_array.size() - 1]
++	var parent_node: Node = template.get_parent()
++	while user_container_array.size() < MAX_SLOTS:
++		var i := user_container_array.size()
++		var uc: Intermission_UserContainer_2D = template.duplicate()
++		uc.name = "player data container%d" % i
++		uc.container_id = i
++		uc.visible = false
++		parent_node.add_child(uc)
++		uc.invite_visual_button = template.invite_visual_button
++		uc.invite_interact_button = template.invite_interact_button
++		user_container_array.append(uc)
++		score_container_nodes.append(uc)
++
++	for i in user_container_array.size():
++		var uc: Intermission_UserContainer_2D = user_container_array[i]
++		uc.scale = Vector2(ROW_SCALE, ROW_SCALE)
++		uc.position.y = rank_y_positions[i]
++	user_data_container_parent.position.y += ROWS_TOP_SHIFT
++
+ func _ready() -> void :
++
++	expand_user_containers()
+ 
+ 	if GameManager.local_game:
+ 		ready_button_parent.visible = false
+@@ -231,6 +260,12 @@
+ 	if PauseMenu.active:
+ 		return
+ 
++	# 8P MOD: test hook, bots ready up on their own (-8pauto).
++	if OS.get_cmdline_user_args().has("-8pauto"):
++		for bot_id in PlayerManager.player_presences.keys():
++			if not players_ready.get(bot_id, false) and PlayerManager.player_presences[bot_id].device_id >= 100:
++				set_ready_rpc(bot_id, true)
++
+ 	for player_id in PlayerManager.player_presences.keys():
+ 		var player_presence = PlayerManager.player_presences[player_id]
+ 		if not player_presence.local_controller_connected:
+@@ -536,7 +571,7 @@
+ 	var counter_speaker = 0
+ 	for node in score_container_nodes:
+ 		node.show_container()
+-		speakers_show_player_card[counter_speaker].play()
++		speakers_show_player_card[counter_speaker % speakers_show_player_card.size()].play()
+ 		counter_speaker += 1
+ 		if not is_inside_tree():
+ 			return
+@@ -672,7 +707,7 @@
+ 		for i in user_container_array.size():
+ 			var user_container = user_container_array[i]
+ 			user_container.show_container()
+-			speakers_show_player_card[i].play()
++			speakers_show_player_card[i % speakers_show_player_card.size()].play()
+ 			if not is_inside_tree():
+ 				return
+ 			await get_tree().create_timer(0.12, false).timeout

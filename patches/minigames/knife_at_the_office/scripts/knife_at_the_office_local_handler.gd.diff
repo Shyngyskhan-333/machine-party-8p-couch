@@ -1,0 +1,228 @@
+--- a/minigames/knife_at_the_office/scripts/knife_at_the_office_local_handler.gd
++++ b/minigames/knife_at_the_office/scripts/knife_at_the_office_local_handler.gd
+@@ -1,95 +1,130 @@
+-extends Node
+-
+-class_name KnifeAtTheOfficeLocalHandler
+-
+-const KATO_VIGNETTE = preload("uid://f647oupqa4ce")
+-
+-@export var local_canvas_root: Control
+-
+-@export var canvas_layer: CanvasLayer
+-@export var background_parent: Control
+-
+-@export var local_after_post_processing_canvas: CanvasLayer
+-@export var local_after_post_processing_root: Control
+-
+-const Layouts: Dictionary = {
+-	0: [
+-		[Vector2(0.0, 0.0), Vector2(1.0, 1.0)], 
+-	], 
+-	1: [
+-		[Vector2(0.0, 0.0), Vector2(1.0, 1.0)], 
+-	], 
+-	2: [
+-		[Vector2(0.0, 0.0), Vector2(1.0, 0.5)], 
+-		[Vector2(0.0, 0.5), Vector2(1.0, 0.5)], 
+-	], 
+-	3: [
+-		[Vector2(0.0, 0.0), Vector2(0.5, 0.5)], 
+-		[Vector2(0.5, 0.0), Vector2(0.5, 0.5)], 
+-		[Vector2(0.0, 0.5), Vector2(0.5, 0.5)], 
+-	], 
+-	4: [
+-		[Vector2(0.0, 0.0), Vector2(0.5, 0.5)], 
+-		[Vector2(0.5, 0.0), Vector2(0.5, 0.5)], 
+-		[Vector2(0.0, 0.5), Vector2(0.5, 0.5)], 
+-		[Vector2(0.5, 0.5), Vector2(0.5, 0.5)], 
+-	], 
+-}
+-
+-var keyboard_rect: TextureRect
+-var texture_rects: Array[TextureRect]
+-var vignette_color_rects: Dictionary[KnifeAtTheOfficePlayer, ColorRect]
+-
+-func _process(_delta: float) -> void :
+-	pass
+-
+-func player_infected(_player: KnifeAtTheOfficePlayer):
+-
+-	if vignette_color_rects.has(_player):
+-		var color_rect: ColorRect = vignette_color_rects.get(_player)
+-		var t = create_tween()
+-		t.tween_method( func(value):
+-			color_rect.set_instance_shader_parameter("radius", value), 
+-			1.0, 0.8, 4.0
+-		).set_trans(Tween.TRANS_BACK
+-		).set_ease(Tween.EASE_IN_OUT)
+-
+-func set_players(players: Array[KnifeAtTheOfficePlayer]):
+-
+-	var vignette_material: ShaderMaterial = ShaderMaterial.new()
+-	vignette_material.shader = KATO_VIGNETTE
+-
+-	var player_count = players.size()
+-	var layout = Layouts[player_count]
+-	var viewport_rect: Rect2 = local_canvas_root.get_viewport_rect()
+-
+-	for i in players.size():
+-		var player: KnifeAtTheOfficePlayer = players[i]
+-		var values = layout[i]
+-
+-		player.local_viewport.size = Vector2i(
+-			viewport_rect.end.x * values[1].x, 
+-			viewport_rect.end.y * values[1].y, 
+-		)
+-		var texture = player.local_viewport.get_texture()
+-		var texture_rect: = TextureRect.new()
+-		texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+-		texture_rect.texture = texture
+-		texture_rect.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+-
+-		local_canvas_root.add_child(texture_rect)
+-		texture_rect.position = viewport_rect.end * values[0]
+-		texture_rect.size = viewport_rect.end * values[1]
+-
+-
+-		var vignette_color_rect: ColorRect = ColorRect.new()
+-
+-		local_after_post_processing_root.add_child(vignette_color_rect)
+-		vignette_color_rect.position = viewport_rect.end * values[0]
+-		vignette_color_rect.size = viewport_rect.end * values[1]
+-
+-		vignette_color_rect.material = vignette_material
+-		vignette_color_rect.set_instance_shader_parameter("radius", 1.0)
+-		vignette_color_rect.set_instance_shader_parameter("vignette_color", Color.GREEN_YELLOW)
+-
+-		vignette_color_rects[player] = vignette_color_rect
++extends Node
++
++class_name KnifeAtTheOfficeLocalHandler
++
++const KATO_VIGNETTE = preload("uid://f647oupqa4ce")
++
++@export var local_canvas_root: Control
++
++@export var canvas_layer: CanvasLayer
++@export var background_parent: Control
++
++@export var local_after_post_processing_canvas: CanvasLayer
++@export var local_after_post_processing_root: Control
++
++const Layouts: Dictionary = {
++	0: [
++		[Vector2(0.0, 0.0), Vector2(1.0, 1.0)], 
++	], 
++	1: [
++		[Vector2(0.0, 0.0), Vector2(1.0, 1.0)], 
++	], 
++	2: [
++		[Vector2(0.0, 0.0), Vector2(1.0, 0.5)], 
++		[Vector2(0.0, 0.5), Vector2(1.0, 0.5)], 
++	], 
++	3: [
++		[Vector2(0.0, 0.0), Vector2(0.5, 0.5)], 
++		[Vector2(0.5, 0.0), Vector2(0.5, 0.5)], 
++		[Vector2(0.0, 0.5), Vector2(0.5, 0.5)], 
++	], 
++	4: [
++		[Vector2(0.0, 0.0), Vector2(0.5, 0.5)], 
++		[Vector2(0.5, 0.0), Vector2(0.5, 0.5)], 
++		[Vector2(0.0, 0.5), Vector2(0.5, 0.5)], 
++		[Vector2(0.5, 0.5), Vector2(0.5, 0.5)], 
++	], 
++	# 8P MOD: 5-6 players = 3x2 grid, 7-8 players = 3x3 grid (tiles keep 16:9)
++	5: [
++		[Vector2(0.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(1.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(2.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(0.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(1.0 / 3.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++	], 
++	6: [
++		[Vector2(0.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(1.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(2.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(0.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(1.0 / 3.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++		[Vector2(2.0 / 3.0, 0.5), Vector2(1.0 / 3.0, 0.5)], 
++	], 
++	7: [
++		[Vector2(0.0, 0.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(1.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(2.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(0.0, 1.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(1.0 / 3.0, 1.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(2.0 / 3.0, 1.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(0.0, 2.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++	], 
++	8: [
++		[Vector2(0.0, 0.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(1.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(2.0 / 3.0, 0.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(0.0, 1.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(1.0 / 3.0, 1.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(2.0 / 3.0, 1.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(0.0, 2.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++		[Vector2(1.0 / 3.0, 2.0 / 3.0), Vector2(1.0 / 3.0, 1.0 / 3.0)], 
++	], 
++}
++
++var keyboard_rect: TextureRect
++var texture_rects: Array[TextureRect]
++var vignette_color_rects: Dictionary[KnifeAtTheOfficePlayer, ColorRect]
++
++func _process(_delta: float) -> void :
++	pass
++
++func player_infected(_player: KnifeAtTheOfficePlayer):
++
++	if vignette_color_rects.has(_player):
++		var color_rect: ColorRect = vignette_color_rects.get(_player)
++		var t = create_tween()
++		t.tween_method( func(value):
++			color_rect.set_instance_shader_parameter("radius", value), 
++			1.0, 0.8, 4.0
++		).set_trans(Tween.TRANS_BACK
++		).set_ease(Tween.EASE_IN_OUT)
++
++func set_players(players: Array[KnifeAtTheOfficePlayer]):
++
++	var vignette_material: ShaderMaterial = ShaderMaterial.new()
++	vignette_material.shader = KATO_VIGNETTE
++
++	var player_count = players.size()
++	var layout = Layouts[player_count]
++	var viewport_rect: Rect2 = local_canvas_root.get_viewport_rect()
++
++	for i in players.size():
++		var player: KnifeAtTheOfficePlayer = players[i]
++		var values = layout[i]
++
++		player.local_viewport.size = Vector2i(
++			viewport_rect.end.x * values[1].x, 
++			viewport_rect.end.y * values[1].y, 
++		)
++		var texture = player.local_viewport.get_texture()
++		var texture_rect: = TextureRect.new()
++		texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
++		texture_rect.texture = texture
++		texture_rect.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
++
++		local_canvas_root.add_child(texture_rect)
++		texture_rect.position = viewport_rect.end * values[0]
++		texture_rect.size = viewport_rect.end * values[1]
++
++
++		var vignette_color_rect: ColorRect = ColorRect.new()
++
++		local_after_post_processing_root.add_child(vignette_color_rect)
++		vignette_color_rect.position = viewport_rect.end * values[0]
++		vignette_color_rect.size = viewport_rect.end * values[1]
++
++		vignette_color_rect.material = vignette_material
++		vignette_color_rect.set_instance_shader_parameter("radius", 1.0)
++		vignette_color_rect.set_instance_shader_parameter("vignette_color", Color.GREEN_YELLOW)
++
++		vignette_color_rects[player] = vignette_color_rect

@@ -1,0 +1,35 @@
+--- a/autoloads/globals.gd
++++ b/autoloads/globals.gd
+@@ -269,7 +269,19 @@
+ 	"green", 
+ 	"yellow", 
+ 	"purple", 
++	"orange", 
++	"cyan", 
++	"pink", 
+ ]
++
++# 8P MOD: the three added suits have no texture of their own. They reuse a
++# shipped suit texture and get their hue from an albedo tint (see
++# CustomizationAssigner.assign_suit_color). [base suit, tint]
++const modded_suit_tints: Dictionary = {
++	"orange": ["yellow", Color(1.35, 0.62, 0.18)], 
++	"cyan": ["blue", Color(0.35, 1.45, 1.5)], 
++	"pink": ["purple", Color(2.3, 1.3, 1.6)], 
++}
+ 
+ var default_settings: Dictionary = {
+ 	"master_volume": 0.2, 
+@@ -303,6 +315,12 @@
+ 
+ func _ready() -> void :
+ 	print("Running version: ", game_version)
++
++	# 8P MOD: test aid, random-walking debug bots.
++	if OS.get_cmdline_user_args().has("-8pwander"):
++		var wander := Node.new()
++		wander.set_script(preload("res://mod8p/wander_bots.gd"))
++		add_child(wander)
+ 
+ 	if debug_instant_start:
+ 		debug_skip_brief = true

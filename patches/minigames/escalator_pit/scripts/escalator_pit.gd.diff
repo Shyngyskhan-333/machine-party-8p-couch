@@ -1,0 +1,100 @@
+--- a/minigames/escalator_pit/scripts/escalator_pit.gd
++++ b/minigames/escalator_pit/scripts/escalator_pit.gd
+@@ -42,6 +42,88 @@
+ 
+ var collective_speed: float = 0.0
+ 
++# 8P MOD: vanilla ships 4 stair troughs / 4 spawn markers. With >4 players every
++# trough is split into two parallel stair strips (8 lanes). Seats 0-3 take the
++# inner(left) strips, seats 4-7 the right strips. Built in _enter_tree because
++# StairHandler._ready() caches paths_parent's children (children ready first).
++const MOD_VANILLA_LANES: int = 4
++const MOD_STRIP_OFFSET: float = 1.6
++const MOD_SPAWN_Y: float = -2.0
++const MOD_HIDDEN_ART: Array[String] = ["Plane_003"]
++const MOD_RAIL_NAME_HINT: String = "cylinder"
++const MOD_CRT_NAME_HINT: String = "crt1_"
++var mod_lane_x: Array[float] = []
++
++func _enter_tree() -> void :
++	if PlayerManager.player_presences.size() > MOD_VANILLA_LANES:
++		_mod_build_eight_lanes()
++
++func _mod_collect_named(node: Node, hint: String, out: Array[Node3D]) -> void :
++	for child in node.get_children():
++		if child is Node3D and hint in String(child.name).to_lower():
++			out.append(child)
++		else:
++			_mod_collect_named(child, hint, out)
++
++func _mod_build_eight_lanes() -> void :
++	if stair_handler == null or stair_handler.paths_parent == null:
++		push_warning("[8P] escalator: stair_handler/paths_parent missing; lanes unchanged")
++		return
++	var parent: Node3D = stair_handler.paths_parent
++	var originals: Array[Path3D] = []
++	for child in parent.get_children():
++		if child is Path3D:
++			originals.append(child)
++	if originals.size() != MOD_VANILLA_LANES:
++		push_warning("[8P] escalator: expected 4 stair paths, found %d; lanes unchanged" % originals.size())
++		return
++	var inner_x: Array[float] = []
++	var outer_x: Array[float] = []
++	for src in originals:
++		var cx: float = src.position.x
++		var clone: Path3D = src.duplicate()
++		clone.name = "%s_MOD" % src.name
++		parent.add_child(clone)
++		src.position.x = cx - MOD_STRIP_OFFSET
++		clone.position.x = cx + MOD_STRIP_OFFSET
++		inner_x.append(src.position.x)
++		outer_x.append(clone.position.x)
++	mod_lane_x = inner_x + outer_x
++
++	# Cosmetic: duplicate CRT screens, hide dividers/handrails that players would clip.
++	var crts: Array[Node3D] = []
++	_mod_collect_named(self, MOD_CRT_NAME_HINT, crts)
++	if crts.size() == MOD_VANILLA_LANES:
++		var cparent: Node = crts[0].get_parent()
++		var same := true
++		for c in crts:
++			if c.get_parent() != cparent:
++				same = false
++		if same:
++			for c in crts:
++				var cc: Node3D = c.duplicate()
++				cc.name = "%s_MOD" % c.name
++				cparent.add_child(cc)
++				c.position.x -= MOD_STRIP_OFFSET
++				cc.position.x += MOD_STRIP_OFFSET
++	var rails: Array[Node3D] = []
++	_mod_collect_named(self, MOD_RAIL_NAME_HINT, rails)
++	for r in rails:
++		r.visible = false
++	for wanted in MOD_HIDDEN_ART:
++		var found: Array[Node3D] = []
++		_mod_collect_named(self, wanted.to_lower(), found)
++		for n in found:
++			n.visible = false
++
++# 8P MOD: spawn position for seat `idx`; lane-based when 8 lanes exist.
++func _mod_spawn_position(idx: int) -> Vector3:
++	var marker: Node3D = player_spawn_positions[idx % player_spawn_positions.size()]
++	if mod_lane_x.size() == 2 * MOD_VANILLA_LANES and idx < mod_lane_x.size():
++		var zref: Node3D = player_spawn_positions[idx % MOD_VANILLA_LANES]
++		return Vector3(mod_lane_x[idx], MOD_SPAWN_Y, zref.global_position.z)
++	return marker.global_position
++
+ func _ready() -> void :
+ 	super._ready()
+ 
+@@ -125,7 +207,7 @@
+ 
+ 		player_character.set_player_presence_rpc.rpc(player_presence.network_id)
+ 		player_character.set_manager_from_path_rpc.rpc(self.get_path())
+-		player_character.teleport_rpc.rpc(player_spawn_positions[counter].global_position)
++		player_character.teleport_rpc.rpc(_mod_spawn_position(counter)) # 8P MOD
+ 		player_character.correct_input.connect(_on_correct_player_input)
+ 
+ 		player_characters[player_presence.network_id] = player_character

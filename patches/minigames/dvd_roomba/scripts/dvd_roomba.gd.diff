@@ -1,0 +1,21 @@
+--- a/minigames/dvd_roomba/scripts/dvd_roomba.gd
++++ b/minigames/dvd_roomba/scripts/dvd_roomba.gd
+@@ -1,6 +1,8 @@
+ extends Minigame
+ 
+ class_name DvdRoombaMinigame
++
++const SpawnHelper = preload("res://mod8p/spawn_helper.gd") # 8P MOD
+ 
+ const roomba_scene = preload("uid://badl26ts540cw")
+ const player_scene = preload("uid://w6wpt3kvl74p")
+@@ -90,7 +92,8 @@
+ 
+ func spawn_players():
+ 
+-	var player_spawn_positions = player_spawn_parent_node.get_children()
++	# 8P MOD: scene ships 4 markers; grow to 8 (cloned onto safe floor)
++	var player_spawn_positions = SpawnHelper.extend_marker_children(player_spawn_parent_node, maxi(8, PlayerManager.player_presences.size()))
+ 	player_spawn_positions.shuffle()
+ 
+ 	player_count = PlayerManager.player_presences.size()

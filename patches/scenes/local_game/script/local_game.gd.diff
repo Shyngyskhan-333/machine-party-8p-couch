@@ -1,0 +1,17 @@
+--- a/scenes/local_game/script/local_game.gd
++++ b/scenes/local_game/script/local_game.gd
+@@ -146,6 +146,14 @@
+ 	if not debug_no_shuffle:
+ 		minigames_shuffled.shuffle()
+ 
++	# 8P MOD: test hook, "-8pgame=<MinigameIdentifier int>" plays only that game once.
++	for arg in OS.get_cmdline_user_args():
++		if arg.begins_with("-8pgame="):
++			var forced: Globals.MinigameIdentifier = int(arg.get_slice("=", 1)) as Globals.MinigameIdentifier
++			minigames_shuffled.clear()
++			minigames_shuffled.append(forced)
++			session_minigame_rounds[forced] = 1
++
+ 	total_games_count = minigames_shuffled.size()
+ 
+ 

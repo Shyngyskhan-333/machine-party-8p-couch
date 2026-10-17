@@ -1,0 +1,15 @@
+--- a/scenes/bootstrap/scripts/bootstrap.gd
++++ b/scenes/bootstrap/scripts/bootstrap.gd
+@@ -18,6 +18,12 @@
+ 		MusicManager.filter_controller.effect_low_pass.cutoff_hz = 300
+ 		Globals.splash_screen_viewed = true
+ 		get_tree().change_scene_to_file("res://scenes/lobby/lobby_scene.tscn")
++		return
++
++	# 8P MOD: test hook, jump straight into the couch lobby.
++	if command_line_arguments.has("-8pautolobby") or OS.get_cmdline_user_args().has("-8pautolobby"):
++		GameManager.custom_game = true
++		get_tree().call_deferred("change_scene_to_file", local_development_scene)
+ 		return
+ 
+ 	if OS.has_feature("editor") and Globals.debug_local:

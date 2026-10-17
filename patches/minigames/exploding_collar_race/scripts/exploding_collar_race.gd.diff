@@ -1,0 +1,21 @@
+--- a/minigames/exploding_collar_race/scripts/exploding_collar_race.gd
++++ b/minigames/exploding_collar_race/scripts/exploding_collar_race.gd
+@@ -3,6 +3,7 @@
+ extends Minigame
+ 
+ const player_scene = preload("res://minigames/exploding_collar_race/components/player/exploding_collar_race_player.tscn")
++const SpawnHelper = preload("res://mod8p/spawn_helper.gd") # 8P MOD
+ const mine_scene = preload("res://minigames/exploding_collar_race/components/mine/mine.tscn")
+ 
+ @onready var host_synchronizer: MultiplayerSynchronizer = $HostSynchronizer
+@@ -155,7 +156,9 @@
+ 
+ func spawn_players():
+ 
+-	var player_positions: Array[Node3D] = player_spawn_positions.duplicate()
++	# 8P MOD: scene ships 4 markers; grow to 8 (safe offset clones) before shuffling
++	var player_positions: Array[Node3D] = []
++	player_positions.assign(SpawnHelper.extend_marker_array(player_spawn_positions, $"player spawn positions", maxi(8, PlayerManager.player_presences.size())))
+ 	player_positions.shuffle()
+ 
+ 

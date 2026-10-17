@@ -1,0 +1,312 @@
+--- a/minigames/burn_recycle/scripts/burn_recycle.gd
++++ b/minigames/burn_recycle/scripts/burn_recycle.gd
+@@ -62,6 +62,138 @@
+ signal player_item_queues_cleared
+ signal elimination_finished
+ 
++# --- 8P MOD: THE FILTER as TWO ROOMS (local couch mode) ----------------------
++# The level has exactly four stations (belt, press, indicator, 90 deg yaw each).
++# Players 5-8 sit in a SECOND ROOM: a copy of the station geometry translated by
++# MOD_ROOM_OFFSET, seated at the same four 90 deg angles. Ported from the v2.1.2
++# online mod, but built with direct calls (local game is one process), no RPCs.
++# Elimination is per room (one victim per room per round); scores are global.
++const MOD_SEATS_PER_ROOM: int = 4
++const MOD_MAX_ROOMS: int = 2
++const MOD_ROOM_OFFSET: Vector3 = Vector3(0.0, 0.0, 200.0)
++const MOD_DEATH_PRESS_SCENE: PackedScene = preload("res://minigames/burn_recycle/instances/burn_recycle_death_press.tscn")
++const MOD_ROOM_SUBTREES: Array[String] = [
++	"burn recycle visuals final",
++	"belts",
++	"indicators parent",
++	"TimerVisuals",
++	"clientside visuals parent",
++]
++
++var mod_room_count: int = 1
++var mod_rooms_built: bool = false
++var mod_extra_timer_labels: Array[Label3D] = []
++var mod_death_score: Dictionary[int, int] = {}
++
++func mod_build_rooms() -> void :
++	if mod_rooms_built:
++		return
++	if PlayerManager.player_presences.size() <= MOD_SEATS_PER_ROOM:
++		return
++
++	mod_rooms_built = true
++	mod_room_count = MOD_MAX_ROOMS
++
++	var room: Node3D = Node3D.new()
++	room.name = "MOD_RoomB"
++	room.position = MOD_ROOM_OFFSET
++	add_child(room)
++
++	var copies: Dictionary = {}
++	for subtree_name in MOD_ROOM_SUBTREES:
++		var src: Node = get_node_or_null(NodePath(subtree_name))
++		if src == null:
++			push_warning("[FILTER8] room subtree missing: %s" % subtree_name)
++			continue
++		var copy: Node = src.duplicate()
++		copy.name = "%s_MOD" % subtree_name
++		room.add_child(copy)
++		copies[subtree_name] = copy
++
++	var belts_copy: Node = copies.get("belts")
++	var indicators_copy: Node = copies.get("indicators parent")
++	var new_belts: Array[MeshInstance3D] = []
++	var new_indicators: Array[BurnRecycleIndicator] = []
++	new_belts.assign(belts)
++	new_indicators.assign(indicators)
++
++	if belts_copy != null:
++		for b in belts:
++			var c: Node = belts_copy.get_node_or_null(NodePath(b.name))
++			if c != null:
++				new_belts.append(c as MeshInstance3D)
++	if indicators_copy != null:
++		for ind in indicators:
++			var c: Node = indicators_copy.get_node_or_null(NodePath(ind.name))
++			if c != null:
++				(c as BurnRecycleIndicator).indicator_id = ind.indicator_id + MOD_SEATS_PER_ROOM
++				new_indicators.append(c as BurnRecycleIndicator)
++
++	# Death presses are instantiated, not duplicated (duplicate() would leave the
++	# @export anim_press/decals pointing at room A's nodes).
++	var press_parent: Node3D = Node3D.new()
++	press_parent.name = "death press parent_MOD"
++	room.add_child(press_parent)
++
++	var new_presses: Array[BurnRecyclePress] = []
++	new_presses.assign(presses)
++	for p in presses:
++		var copy: Node3D = MOD_DEATH_PRESS_SCENE.instantiate()
++		copy.name = "%s_MOD" % p.name
++		copy.transform = (p as Node3D).transform
++		press_parent.add_child(copy)
++		(copy as BurnRecyclePress).press_id = p.press_id + MOD_SEATS_PER_ROOM
++		new_presses.append(copy as BurnRecyclePress)
++
++	belts = new_belts
++	indicators = new_indicators
++	presses = new_presses
++
++	var timer_copy: Node = copies.get("TimerVisuals")
++	if timer_copy != null:
++		var lbl: Node = timer_copy.get_node_or_null(NodePath("TimerLabel"))
++		if lbl != null:
++			mod_extra_timer_labels.append(lbl as Label3D)
++
++func _mod_room_of(player) -> int:
++	return player.active_seat_index / MOD_SEATS_PER_ROOM
++
++func _mod_active_in_room(room: int) -> Array:
++	var out: Array = []
++	for player in active_players.values():
++		if _mod_room_of(player) == room:
++			out.append(player)
++	return out
++
++func _mod_any_room_contested() -> bool:
++	for room in mod_room_count:
++		if _mod_active_in_room(room).size() > 1:
++			return true
++	return false
++
++# Vanilla elimination rule applied to one room's players.
++func _mod_pick_elimination(room_players: Array):
++	if room_players.size() <= 1:
++		return null
++
++	var players_by_score: Dictionary[int, Array]
++	var lowest_score: int = 9999
++	for player in room_players:
++		var score: int = (player.valid_burns + player.valid_recycles)
++		if not players_by_score.has(score):
++			players_by_score[score] = []
++		players_by_score[score].append(player)
++		if score < lowest_score:
++			lowest_score = score
++
++	if lowest_score == 0:
++		return players_by_score[lowest_score].pick_random()
++	elif lowest_score > 0:
++		if players_by_score[lowest_score].size() == 1:
++			return players_by_score[lowest_score].pop_front()
++	return null
++# --- end 8P MOD block ---------------------------------------------------------
++
+ func _ready() -> void :
+ 	super._ready()
+ 
+@@ -164,6 +296,13 @@
+ 
+ 	player_count = PlayerManager.player_presences.size()
+ 
++	# 8P MOD: build room B before seats are handed out; balanced rooms
++	# (5 -> 3+2, 6 -> 3+3, 7 -> 4+3, 8 -> 4+4) so nobody is alone in a room.
++	mod_build_rooms()
++	var mod_first_room_size: int = player_count
++	if player_count > MOD_SEATS_PER_ROOM:
++		mod_first_room_size = int(ceil(float(player_count) / float(MOD_MAX_ROOMS)))
++
+ 	var counter: int = 0
+ 	for key in PlayerManager.player_presences.keys():
+ 
+@@ -173,9 +312,21 @@
+ 		player_parent_node.add_child(player_character, true)
+ 
+ 		player_character.set_manager_from_path_rpc.rpc(self.get_path())
+-		player_character.set_player_presence.rpc(player_presence.network_id, counter)
++
++		# 8P MOD: ordinal != station once rooms are uneven; everything downstream
++		# (belt, press, indicator) is keyed on the STATION number.
++		var mod_room: int = 0
++		var mod_seat_in_room: int = counter
++		if counter >= mod_first_room_size:
++			mod_room = 1
++			mod_seat_in_room = counter - mod_first_room_size
++		var mod_station: int = mod_room * MOD_SEATS_PER_ROOM + mod_seat_in_room
++
++		# Must be set BEFORE set_player_presence (setup_local_visuals reads it).
++		player_character.mod_set_room(mod_room)
++		player_character.set_player_presence.rpc(player_presence.network_id, mod_station)
+ 		player_character.setup_rpc.rpc(
+-			Vector3(0.0, 90.0 * counter, 0.0), 
++			Vector3(0.0, 90.0 * mod_seat_in_room, 0.0),
+ 			random_type_byte_array
+ 		)
+ 
+@@ -183,7 +334,7 @@
+ 		active_players[player_presence.network_id] = player_character
+ 
+ 		player_character.item_queue_cleared.connect(_on_player_queue_cleared)
+-		player_character.item_launched.connect(_on_item_launched)
++		player_character.item_launched.connect(_on_item_launched.bind(mod_room)) # 8P MOD: room bound
+ 
+ 		counter += 1
+ 
+@@ -230,7 +381,8 @@
+ 	if finished:
+ 		return
+ 
+-	if active_players.size() > 1:
++	# 8P MOD: game is over once every room is down to one (or none) player.
++	if _mod_any_room_contested():
+ 		if from_disconnect:
+ 			return
+ 		else:
+@@ -241,14 +393,12 @@
+ 
+ 
+ 	for i in dead_players.size():
+-		player_scores[dead_players[i]] = i
+-
++		player_scores[dead_players[i]] = mod_death_score.get(dead_players[i], i) # 8P MOD
++
++	# 8P MOD: score every survivor (one per room), no break.
+ 	for network_id in active_players.keys():
+ 		player_scores[network_id] = player_count
+ 
+-
+-		break
+-
+ 	player_scores_finalized.emit(player_scores)
+ 
+ 	await get_tree().create_timer(2.0).timeout
+@@ -259,41 +409,33 @@
+ 
+ func eliminate_players():
+ 
+-	var players_by_score: Dictionary[int, Array]
+-	var lowest_score: int = 9999
+-	for player in active_players.values():
+-		var score: int = (player.valid_burns + player.valid_recycles)
+-		if not players_by_score.has(score):
+-			players_by_score[score] = []
+-		players_by_score[score].append(player)
+-
+-		if score < lowest_score:
+-			lowest_score = score
+-
+-	var eliminate_network_id: int = -1
+-	var seat_to_focus_index: int = -1
+-	if lowest_score == 0:
+-		var random_player = players_by_score[lowest_score].pick_random()
+-		var network_id = random_player.player_presence.network_id
+-		eliminate_network_id = network_id
+-		seat_to_focus_index = random_player.active_seat_index
+-		dead_players.append(network_id)
+-	elif lowest_score > 0:
+-		if players_by_score[lowest_score].size() == 1:
+-			var random_player = players_by_score[lowest_score].pop_front()
+-			var network_id = random_player.player_presence.network_id
+-			eliminate_network_id = network_id
+-			seat_to_focus_index = random_player.active_seat_index
+-			dead_players.append(network_id)
+-
+-	if seat_to_focus_index >= 0:
+-		start_camera_movement_rpc.rpc(seat_to_focus_index)
++	# 8P MOD: one victim per room per round; simultaneous victims share the
++	# highest index of the batch as their score.
++	var mod_victims: Array = []
++	for room in mod_room_count:
++		var chosen = _mod_pick_elimination(_mod_active_in_room(room))
++		if chosen != null:
++			mod_victims.append(chosen)
++			dead_players.append(chosen.player_presence.network_id)
++
++	var mod_batch_top: int = dead_players.size() - 1
++	for victim in mod_victims:
++		mod_death_score[victim.player_presence.network_id] = mod_batch_top
++
++	if not mod_victims.is_empty():
++		for victim in mod_victims:
++			start_camera_movement_rpc.rpc(victim.active_seat_index)
++
+ 		await get_tree().create_timer(1.0).timeout
+-		if GameManager.local_game:
+-			if players.has(eliminate_network_id):
+-				local_handler.hide_player_tag(players.get(eliminate_network_id))
+-		active_players[eliminate_network_id].set_eliminated_rpc.rpc()
+-		remove_active_player_rpc.rpc(eliminate_network_id)
++
++		for victim in mod_victims:
++			var victim_id: int = victim.player_presence.network_id
++			if GameManager.local_game:
++				if players.has(victim_id):
++					local_handler.hide_player_tag(players.get(victim_id))
++			if active_players.has(victim_id):
++				active_players[victim_id].set_eliminated_rpc.rpc()
++				remove_active_player_rpc.rpc(victim_id)
+ 
+ 	await get_tree().create_timer(2.0).timeout
+ 
+@@ -366,10 +508,13 @@
+ @rpc("any_peer", "call_local", "reliable")
+ func update_timers_rpc(_time_remaining: int):
+ 	timer_label.text = "00:%s" % [str(_time_remaining).pad_zeros(2)]
+-
+-
+-
+-func _on_item_launched(_rotation: Vector3, _type: BurnRecycleMinigame.ItemTypes):
++	# 8P MOD: room B has its own readout
++	for lbl in mod_extra_timer_labels:
++		lbl.text = timer_label.text
++
++
++
++func _on_item_launched(_rotation: Vector3, _type: BurnRecycleMinigame.ItemTypes, mod_room: int = 0): # 8P MOD: room arg
+ 
+ 	var launch_item: BurnRecycleLaunchedItem
+ 	for li in item_parent_node.get_children():
+@@ -381,6 +526,9 @@
+ 
+ 		launch_item = burn_recycle_launched_item.instantiate()
+ 		item_parent_node.add_child(launch_item, true)
++
++	# 8P MOD: items are pooled and shared; move into the thrower's room first.
++	launch_item.position = MOD_ROOM_OFFSET * float(mod_room)
+ 
+ 	launch_item.launch_rpc.rpc(
+ 		_rotation, 

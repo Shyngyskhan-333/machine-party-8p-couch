@@ -1,0 +1,94 @@
+--- a/minigames/duck_hunt/scripts/duck_hunt.gd
++++ b/minigames/duck_hunt/scripts/duck_hunt.gd
+@@ -67,6 +67,57 @@
+ 
+ var local_duck_players: Dictionary[int, DuckHuntDuckPlayer]
+ var local_game_players_order: Dictionary
++
++# 8P MOD: the scene ships only 3 duck spawn markers (4-player cap = 1 hunter + 3 ducks).
++# With up to 8 players we need 7. Extra Marker3Ds are added in a row at half spacing,
++# alternating outward from the centre, on the same z as the shipped ones.
++const MOD_FINISH_HALF_WIDTH: float = 11.75
++
++func _mod_expand_spawn_markers() -> void :
++	var needed: int = maxi(PlayerManager.player_presences.size() - 1, 1)
++	var existing: Array[Node] = duck_player_spawn_positions.get_children()
++	var before: int = existing.size()
++	if before == 0 or needed <= before:
++		return
++	var base: Node3D = existing[0] as Node3D
++	var xs: Array[float] = []
++	for m in existing:
++		xs.append((m as Node3D).position.x)
++	xs.sort()
++	var spacing: float = 5.0
++	if xs.size() >= 2:
++		spacing = (xs[xs.size() - 1] - xs[0]) / float(xs.size() - 1)
++	var step: float = maxf(spacing * 0.5, 0.5)
++	var added: int = 0
++	var slot: int = 1
++	while before + added < needed and slot < 64:
++		for sgn in [-1.0, 1.0]:
++			if before + added >= needed:
++				break
++			var x: float = sgn * step * float(slot)
++			if absf(x) > MOD_FINISH_HALF_WIDTH:
++				continue
++			var clash := false
++			for ex in xs:
++				if absf(ex - x) < 0.01:
++					clash = true
++					break
++			if clash:
++				continue
++			var marker := Marker3D.new()
++			marker.name = "Marker3D_MOD%d" % (before + added + 1)
++			duck_player_spawn_positions.add_child(marker)
++			marker.position = Vector3(x, base.position.y, base.position.z)
++			xs.append(x)
++			added += 1
++		slot += 1
++	# Last-resort safety: never let spawn_positions[counter] run off the end.
++	while before + added < needed:
++		var marker2 := Marker3D.new()
++		marker2.name = "Marker3D_MOD%d" % (before + added + 1)
++		duck_player_spawn_positions.add_child(marker2)
++		marker2.position = Vector3(base.position.x + 0.8 * float(added + 1), base.position.y, base.position.z)
++		added += 1
+ 
+ func _ready() -> void :
+ 	super._ready()
+@@ -228,6 +279,7 @@
+ 	else:
+ 		set_ducks_ambient_light_rpc.rpc(hunter_network_id)
+ 
++	_mod_expand_spawn_markers() # 8P MOD: must run before the marker list is read
+ 	var spawn_positions = duck_player_spawn_positions.get_children()
+ 	spawn_positions.shuffle()
+ 
+@@ -430,7 +482,7 @@
+ 			duck_players.erase(_network_id)
+ 		if player_instance is DuckHuntHunterPlayer:
+ 			hunter_player = null
+-			duck_player_count -= 1
++			pass # 8P MOD: hunter was never counted as a duck; decrement corrupted magazine size
+ 
+ 		player_instance.queue_free()
+ 		players.erase(player_instance)
+@@ -517,12 +569,14 @@
+ 	if duck_players.has(_network_id):
+ 		duck_players.erase(_network_id)
+ 		remove_spectate_player_rpc.rpc(_network_id)
+-		player_scores[hunter_player.player_presence.network_id] += 1
++		if hunter_player != null: # 8P MOD: hunter may have left
++			player_scores[hunter_player.player_presence.network_id] += 1
+ 
+ 	players_shot.append(_network_id)
+ 
+ 	if players_shot.size() == (player_count - 1):
+-		player_scores[hunter_player.player_presence.network_id] += 1
++		if hunter_player != null: # 8P MOD: hunter may have left
++			player_scores[hunter_player.player_presence.network_id] += 1
+ 
+ 	check_game_end()
+ 

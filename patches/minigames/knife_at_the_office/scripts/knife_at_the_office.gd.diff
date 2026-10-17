@@ -1,0 +1,709 @@
+--- a/minigames/knife_at_the_office/scripts/knife_at_the_office.gd
++++ b/minigames/knife_at_the_office/scripts/knife_at_the_office.gd
+@@ -1,344 +1,362 @@
+-extends Minigame
+-
+-class_name KnifeAtTheOfficeMinigame
+-
+-const player_scene = preload("res://minigames/knife_at_the_office/components/player/knife_at_the_office_player.tscn")
+-const searchable_scene = preload("res://minigames/knife_at_the_office/components/searchable/searchable.tscn")
+-
+-@export_category("Networked Components")
+-@export var player_spawn_node: Node3D
+-@export var player_spawn_positions_node: Node3D
+-
+-@export_category("Components")
+-@export var light_handler: KnifeAtTheOfficeLightHandler
+-@export var countdown_handler: KnifeAtTheOfficeCountdownHandler
+-@export var anim_projector_hide_hunt: AnimationPlayer
+-
+-@export_category("Local Nodes")
+-@export var local_root_node: Node3D
+-@export var local_handler: KnifeAtTheOfficeLocalHandler
+-@export var fow_meshes: Array[MeshInstance3D]
+-@export var local_audio_listener: AudioListener3D
+-
+-@export_category("Game Settings")
+-@export var items_to_spawn: int = 2
+-
+-@export_category("States With Signals")
+-@export var countdown_state: State
+-
+-@export_category("Audio")
+-@export var speaker_syringe_found: AudioStreamPlayer
+-@export var ambience_speaker_controllers: Array[SpeakerController]
+-
+-var players: Dictionary[int, KnifeAtTheOfficePlayer]
+-var infected_players: Array[int]
+-var killed_players: Array[int]
+-var active_players: Dictionary[int, KnifeAtTheOfficePlayer]
+-
+-var hunting_phase: bool = false
+-var searching_disabled: bool = false
+-
+-var searchables: Array[KnifeAtTheOfficeSearchable]
+-var containers_searched: int = 0
+-var guaranteed_search_result: int = -1
+-
+-var projector_started = false
+-
+-var player_count: int = 0
+-var player_scores: Dictionary[int, int]
+-var dead_players: Array[int]
+-
+-func _ready() -> void :
+-	super._ready()
+-
+-	if multiplayer.is_server():
+-
+-		countdown_state.countdown_started.connect(_on_countdown_started)
+-		countdown_state.tick.connect(_on_countdown_tick)
+-		countdown_state.expired.connect(_on_countdown_expired)
+-
+-		countdown_handler.expired.connect(_on_game_countdown_expired)
+-
+-	if GameManager.local_game:
+-
+-		await get_tree().create_timer(1.0).timeout
+-		local_root_node.visible = true
+-		local_handler.local_after_post_processing_canvas.visible = true
+-		local_handler.canvas_layer.visible = true
+-		minigame_ready.emit(1)
+-
+-		local_audio_listener.make_current()
+-
+-func _process(delta: float) -> void :
+-
+-	if not GameManager.local_game:
+-		return
+-
+-	if players.is_empty():
+-		return
+-
+-	var positions: Array[Vector3]
+-	for p in players.values():
+-		positions.append(p.global_position)
+-	var position_count: int = positions.size()
+-
+-	var sum: Vector3 = positions.pop_front()
+-	for p in positions:
+-		sum += p
+-	var avg_position: Vector3 = sum / position_count
+-
+-	local_audio_listener.global_position = local_audio_listener.global_position.move_toward(
+-		avg_position, delta * 128.0
+-	)
+-
+-func initialize(_round_number: int, _total_rounds: int, _scores: Dictionary = {}):
+-	super.initialize(_round_number, _total_rounds, _scores)
+-
+-	spawn_players()
+-
+-	state_machine.transition_to_rpc.rpc(&"Round", {"round": _round_number, "total": _total_rounds})
+-
+-func fade_in_ambience():
+-
+-	for speaker_controller in ambience_speaker_controllers:
+-		speaker_controller.speaker.volume_linear = 0
+-		speaker_controller.fade_duration = 3
+-		speaker_controller.fade_in_custom(db_to_linear(speaker_controller.original_volume_db), true)
+-
+-func spawn_players():
+-
+-	var spawn_positions = player_spawn_positions_node.get_children()
+-	spawn_positions.shuffle()
+-
+-
+-	var searchable_count: int = 26
+-	var player_ratio: float = PlayerManager.player_presences.size() / float(4)
+-	var searchable_base: int = round(searchable_count * player_ratio)
+-	var random_removal: int = round((searchable_base * 0.5) * randf())
+-	guaranteed_search_result = searchable_base - random_removal
+-
+-
+-	var counter: int = 0
+-	for key in PlayerManager.player_presences.keys():
+-		var player_presence: PlayerPresence = PlayerManager.player_presences[key]
+-
+-		var player_character = player_scene.instantiate()
+-		player_spawn_node.add_child(player_character, true)
+-
+-		player_character.set_player_presence.rpc(player_presence.network_id)
+-		player_character.set_game_reference_from_path.rpc(self.get_path())
+-		player_character.teleport_rpc.rpc(
+-			spawn_positions[counter].global_position, 
+-			spawn_positions[counter].global_rotation, 
+-		)
+-
+-		players[player_presence.network_id] = player_character
+-		active_players[player_presence.network_id] = player_character
+-
+-		player_character.item_found.connect(_on_item_found)
+-		player_character.infected.connect(_on_player_infected)
+-		player_character.dead.connect(_on_player_died)
+-
+-		player_scores[player_presence.network_id] = 0
+-
+-		counter += 1
+-
+-	if GameManager.local_game:
+-		local_handler.set_players(players.values())
+-
+-		for i in players.size():
+-			var network_id = players.keys()[i]
+-			var player = players[network_id]
+-			var starting_layer = 11 + (i * 2)
+-			player.set_local_values(starting_layer)
+-			for mesh in fow_meshes:
+-				mesh.set_layer_mask_value(starting_layer, true)
+-
+-func all_players_loaded():
+-	super.all_players_loaded()
+-
+-	if not multiplayer.is_server():
+-		return
+-
+-	is_all_player_loaded = true
+-	minigame_ready.emit(multiplayer.get_unique_id())
+-
+-func check_game_end():
+-
+-	if active_players.size() <= 1:
+-		await get_tree().create_timer(1.0).timeout
+-		AudioServer.set_bus_volume_linear(AudioServer.get_bus_index("MINIGAME_SFX"), 0.0)
+-		MusicManager.start_playing_music_host(true, 3, false, 3)
+-		end_game()
+-		return
+-
+-	if infected_players.size() < active_players.size():
+-		return
+-
+-	await get_tree().create_timer(3.0).timeout
+-
+-	countdown_handler.anim_fade.play("fade out")
+-	MusicManager.start_playing_music_host(true, 3, false, 3)
+-
+-	end_game()
+-
+-func end_game():
+-
+-	for p in players.values():
+-		p.set_active_rpc.rpc(false)
+-
+-	await get_tree().create_timer(1.0).timeout
+-
+-	for p in players.values():
+-		if infected_players.has(p.player_presence.network_id):
+-			continue
+-		player_scores[p.player_presence.network_id] += 1
+-	player_scores_finalized.emit(player_scores)
+-
+-	await get_tree().create_timer(1.0).timeout
+-	set_minigame_sfx_linear_volume_rpc.rpc(0.0)
+-
+-	state_machine.transition_to_rpc.rpc(&"Finished")
+-	set_effects_visibility_rpc.rpc(false)
+-
+-func start_2nd_phase_music():
+-	MusicManager.stop_playing_music(3)
+-	MusicManager.play_kato_2nd_phase_music()
+-	speaker_syringe_found.play()
+-
+-	for player: KnifeAtTheOfficePlayer in player_spawn_node.get_children():
+-		if !player.is_infected:
+-			player.camera_zoom_in()
+-
+-
+-func player_disconnected(_network_id: int):
+-	super.player_disconnected(_network_id)
+-
+-	if not multiplayer.is_server():
+-		return
+-
+-	remove_player_rpc.rpc(_network_id)
+-	await get_tree().create_timer(1.0).timeout
+-
+-	check_game_end()
+-
+-
+-
+-@rpc("any_peer", "call_local", "reliable")
+-func remove_player_rpc(_network_id: int):
+-
+-	var player_instance = players.get(_network_id, null)
+-	if player_instance:
+-
+-		player_instance.cleanup_rpc.rpc()
+-		player_instance.queue_free()
+-
+-		player_scores.erase(_network_id)
+-		players.erase(_network_id)
+-		active_players.erase(_network_id)
+-
+-
+-@rpc("any_peer", "call_local", "reliable")
+-func start_projector_hide_hunt_loop_rpc():
+-	for player: KnifeAtTheOfficePlayer in player_spawn_node.get_children():
+-		if player.is_infected:
+-			continue
+-		player.player_name_label.animation_player.play("hide name")
+-	anim_projector_hide_hunt.play("loop")
+-	start_2nd_phase_music()
+-
+-@rpc("any_peer", "call_local", "reliable")
+-func set_searching_disabled_rpc(state: bool):
+-	searching_disabled = state
+-
+-@rpc("any_peer", "call_local", "reliable")
+-func enable_player_fow_rpc():
+-
+-	for p in players.values():
+-		p.set_fow_rpc.rpc(true)
+-
+-@rpc("any_peer", "call_local", "reliable")
+-func request_item_find_rpc(_network_id: int):
+-
+-	if not multiplayer.is_server():
+-		return
+-
+-	containers_searched += 1
+-
+-	if GameManager.local_game:
+-
+-		if containers_searched == guaranteed_search_result:
+-			players[_network_id].search_result_rpc(true)
+-		else:
+-			players[_network_id].search_result_rpc(false)
+-
+-		return
+-
+-	if containers_searched == guaranteed_search_result:
+-		players[_network_id].search_result_rpc.rpc(true)
+-	else:
+-		players[_network_id].search_result_rpc.rpc(false)
+-
+-
+-
+-@rpc("any_peer", "call_local", "reliable")
+-func _on_item_found(_network_id):
+-
+-	if not infected_players.has(_network_id):
+-		infected_players.append(_network_id)
+-
+-	if !projector_started:
+-		start_projector_hide_hunt_loop_rpc.rpc()
+-	projector_started = true
+-	await get_tree().create_timer(1.5).timeout
+-
+-	if not hunting_phase:
+-		hunting_phase = true
+-
+-		player_scores[_network_id] += 1
+-		set_searching_disabled_rpc.rpc(true)
+-
+-		light_handler.transition_to_dark_rpc.rpc()
+-		await get_tree().create_timer(3.0).timeout
+-		countdown_handler.set_active_rpc.rpc(active_players.size() - 1)
+-		enable_player_fow_rpc.rpc()
+-
+-func _on_player_infected(_network_id: int, _by_network_id: int):
+-
+-	if not infected_players.has(_network_id):
+-		infected_players.append(_network_id)
+-		if GameManager.local_game:
+-			local_handler.player_infected(players[_network_id])
+-
+-	if multiplayer.is_server():
+-
+-		player_scores[_by_network_id] += 1
+-		countdown_handler.update_alive_indicator_rpc.rpc(active_players.size() - infected_players.size())
+-
+-		await get_tree().create_timer(1.0).timeout
+-
+-		check_game_end()
+-
+-func _on_player_died(_network_id: int, _by_network_id):
+-	killed_players.append(_network_id)
+-
+-	await get_tree().create_timer(3.0).timeout
+-
+-	check_game_end()
+-
+-func _on_game_countdown_expired():
+-	MusicManager.start_playing_music_host(true, 3, false, 3)
+-	end_game()
+-
+-func _on_all_brief_ready():
+-
+-	await get_tree().create_timer(1.0).timeout
+-	state_machine.transition_to_rpc.rpc(&"Round")
+-
+-func _on_countdown_expired():
+-	super._on_countdown_expired()
+-
+-	for player in players.values():
+-		player.set_active_rpc.rpc(true)
+-
+-	state_machine.transition_to_rpc.rpc(&"Play")
++extends Minigame
++
++class_name KnifeAtTheOfficeMinigame
++
++const player_scene = preload("res://minigames/knife_at_the_office/components/player/knife_at_the_office_player.tscn")
++const searchable_scene = preload("res://minigames/knife_at_the_office/components/searchable/searchable.tscn")
++const SpawnHelper = preload("res://mod8p/spawn_helper.gd")  # 8P MOD
++
++@export_category("Networked Components")
++@export var player_spawn_node: Node3D
++@export var player_spawn_positions_node: Node3D
++
++@export_category("Components")
++@export var light_handler: KnifeAtTheOfficeLightHandler
++@export var countdown_handler: KnifeAtTheOfficeCountdownHandler
++@export var anim_projector_hide_hunt: AnimationPlayer
++
++@export_category("Local Nodes")
++@export var local_root_node: Node3D
++@export var local_handler: KnifeAtTheOfficeLocalHandler
++@export var fow_meshes: Array[MeshInstance3D]
++@export var local_audio_listener: AudioListener3D
++
++@export_category("Game Settings")
++@export var items_to_spawn: int = 2
++
++@export_category("States With Signals")
++@export var countdown_state: State
++
++@export_category("Audio")
++@export var speaker_syringe_found: AudioStreamPlayer
++@export var ambience_speaker_controllers: Array[SpeakerController]
++
++var players: Dictionary[int, KnifeAtTheOfficePlayer]
++var infected_players: Array[int]
++var killed_players: Array[int]
++var active_players: Dictionary[int, KnifeAtTheOfficePlayer]
++
++var hunting_phase: bool = false
++var searching_disabled: bool = false
++
++var searchables: Array[KnifeAtTheOfficeSearchable]
++var containers_searched: int = 0
++var guaranteed_search_result: int = -1
++
++var projector_started = false
++
++var player_count: int = 0
++var player_scores: Dictionary[int, int]
++var dead_players: Array[int]
++
++func _ready() -> void :
++	super._ready()
++
++	if multiplayer.is_server():
++
++		countdown_state.countdown_started.connect(_on_countdown_started)
++		countdown_state.tick.connect(_on_countdown_tick)
++		countdown_state.expired.connect(_on_countdown_expired)
++
++		countdown_handler.expired.connect(_on_game_countdown_expired)
++
++	if GameManager.local_game:
++
++		await get_tree().create_timer(1.0).timeout
++		local_root_node.visible = true
++		local_handler.local_after_post_processing_canvas.visible = true
++		local_handler.canvas_layer.visible = true
++		minigame_ready.emit(1)
++
++		local_audio_listener.make_current()
++
++func _process(delta: float) -> void :
++
++	if not GameManager.local_game:
++		return
++
++	if players.is_empty():
++		return
++
++	var positions: Array[Vector3]
++	for p in players.values():
++		positions.append(p.global_position)
++	var position_count: int = positions.size()
++
++	var sum: Vector3 = positions.pop_front()
++	for p in positions:
++		sum += p
++	var avg_position: Vector3 = sum / position_count
++
++	local_audio_listener.global_position = local_audio_listener.global_position.move_toward(
++		avg_position, delta * 128.0
++	)
++
++func initialize(_round_number: int, _total_rounds: int, _scores: Dictionary = {}):
++	super.initialize(_round_number, _total_rounds, _scores)
++
++	spawn_players()
++
++	state_machine.transition_to_rpc.rpc(&"Round", {"round": _round_number, "total": _total_rounds})
++
++func fade_in_ambience():
++
++	for speaker_controller in ambience_speaker_controllers:
++		speaker_controller.speaker.volume_linear = 0
++		speaker_controller.fade_duration = 3
++		speaker_controller.fade_in_custom(db_to_linear(speaker_controller.original_volume_db), true)
++
++func spawn_players():
++
++	# 8P MOD: level ships 4 markers; grow to the roster size with floor-checked clones
++	var spawn_positions = SpawnHelper.extend_marker_children(player_spawn_positions_node, PlayerManager.player_presences.size())
++	spawn_positions.shuffle()
++
++
++	var searchable_count: int = 26
++	var player_ratio: float = PlayerManager.player_presences.size() / float(4)
++	var searchable_base: int = round(searchable_count * player_ratio)
++	var random_removal: int = round((searchable_base * 0.5) * randf())
++	guaranteed_search_result = searchable_base - random_removal
++
++	# 8P MOD: a container can only be searched once, so the target must not exceed the
++	# number of containers in the level (36), or the syringe is never found and the round never ends.
++	var mod_all: Array[KnifeAtTheOfficeSearchable] = []
++	_mod_collect_searchables(self, mod_all)
++	if mod_all.size() > 0:
++		guaranteed_search_result = mini(guaranteed_search_result, maxi(mod_all.size() - 2, 1))
++
++
++	var counter: int = 0
++	for key in PlayerManager.player_presences.keys():
++		var player_presence: PlayerPresence = PlayerManager.player_presences[key]
++
++		var player_character = player_scene.instantiate()
++		player_spawn_node.add_child(player_character, true)
++
++		player_character.set_player_presence.rpc(player_presence.network_id)
++		player_character.set_game_reference_from_path.rpc(self.get_path())
++		player_character.teleport_rpc.rpc(
++			spawn_positions[counter].global_position, 
++			spawn_positions[counter].global_rotation, 
++		)
++
++		players[player_presence.network_id] = player_character
++		active_players[player_presence.network_id] = player_character
++
++		player_character.item_found.connect(_on_item_found)
++		player_character.infected.connect(_on_player_infected)
++		player_character.dead.connect(_on_player_died)
++
++		player_scores[player_presence.network_id] = 0
++
++		counter += 1
++
++	if GameManager.local_game:
++		local_handler.set_players(players.values())
++
++		for i in players.size():
++			var network_id = players.keys()[i]
++			var player = players[network_id]
++			# 8P MOD: each local player needs 2 render layers. Layer 20 is the infected-name-label
++			# layer, so players 5-8 start at 21 instead of 19 (layers 21..28).
++			var starting_layer = 11 + (i * 2) if i < 4 else 21 + ((i - 4) * 2)
++			player.set_local_values(starting_layer)
++			for mesh in fow_meshes:
++				mesh.set_layer_mask_value(starting_layer, true)
++
++# 8P MOD
++func _mod_collect_searchables(_node: Node, _out: Array[KnifeAtTheOfficeSearchable]) -> void :
++	if _node is KnifeAtTheOfficeSearchable:
++		_out.append(_node)
++	for c in _node.get_children():
++		_mod_collect_searchables(c, _out)
++
++func all_players_loaded():
++	super.all_players_loaded()
++
++	if not multiplayer.is_server():
++		return
++
++	is_all_player_loaded = true
++	minigame_ready.emit(multiplayer.get_unique_id())
++
++func check_game_end():
++
++	if active_players.size() <= 1:
++		await get_tree().create_timer(1.0).timeout
++		AudioServer.set_bus_volume_linear(AudioServer.get_bus_index("MINIGAME_SFX"), 0.0)
++		MusicManager.start_playing_music_host(true, 3, false, 3)
++		end_game()
++		return
++
++	if infected_players.size() < active_players.size():
++		return
++
++	await get_tree().create_timer(3.0).timeout
++
++	countdown_handler.anim_fade.play("fade out")
++	MusicManager.start_playing_music_host(true, 3, false, 3)
++
++	end_game()
++
++func end_game():
++
++	for p in players.values():
++		p.set_active_rpc.rpc(false)
++
++	await get_tree().create_timer(1.0).timeout
++
++	for p in players.values():
++		if infected_players.has(p.player_presence.network_id):
++			continue
++		player_scores[p.player_presence.network_id] += 1
++	player_scores_finalized.emit(player_scores)
++
++	await get_tree().create_timer(1.0).timeout
++	set_minigame_sfx_linear_volume_rpc.rpc(0.0)
++
++	state_machine.transition_to_rpc.rpc(&"Finished")
++	set_effects_visibility_rpc.rpc(false)
++
++func start_2nd_phase_music():
++	MusicManager.stop_playing_music(3)
++	MusicManager.play_kato_2nd_phase_music()
++	speaker_syringe_found.play()
++
++	for player: KnifeAtTheOfficePlayer in player_spawn_node.get_children():
++		if !player.is_infected:
++			player.camera_zoom_in()
++
++
++func player_disconnected(_network_id: int):
++	super.player_disconnected(_network_id)
++
++	if not multiplayer.is_server():
++		return
++
++	remove_player_rpc.rpc(_network_id)
++	await get_tree().create_timer(1.0).timeout
++
++	check_game_end()
++
++
++
++@rpc("any_peer", "call_local", "reliable")
++func remove_player_rpc(_network_id: int):
++
++	var player_instance = players.get(_network_id, null)
++	if player_instance:
++
++		player_instance.cleanup_rpc.rpc()
++		player_instance.queue_free()
++
++		player_scores.erase(_network_id)
++		players.erase(_network_id)
++		active_players.erase(_network_id)
++
++
++@rpc("any_peer", "call_local", "reliable")
++func start_projector_hide_hunt_loop_rpc():
++	for player: KnifeAtTheOfficePlayer in player_spawn_node.get_children():
++		if player.is_infected:
++			continue
++		player.player_name_label.animation_player.play("hide name")
++	anim_projector_hide_hunt.play("loop")
++	start_2nd_phase_music()
++
++@rpc("any_peer", "call_local", "reliable")
++func set_searching_disabled_rpc(state: bool):
++	searching_disabled = state
++
++@rpc("any_peer", "call_local", "reliable")
++func enable_player_fow_rpc():
++
++	for p in players.values():
++		p.set_fow_rpc.rpc(true)
++
++@rpc("any_peer", "call_local", "reliable")
++func request_item_find_rpc(_network_id: int):
++
++	if not multiplayer.is_server():
++		return
++
++	containers_searched += 1
++
++	if GameManager.local_game:
++
++		if containers_searched == guaranteed_search_result:
++			players[_network_id].search_result_rpc(true)
++		else:
++			players[_network_id].search_result_rpc(false)
++
++		return
++
++	if containers_searched == guaranteed_search_result:
++		players[_network_id].search_result_rpc.rpc(true)
++	else:
++		players[_network_id].search_result_rpc.rpc(false)
++
++
++
++@rpc("any_peer", "call_local", "reliable")
++func _on_item_found(_network_id):
++
++	if not infected_players.has(_network_id):
++		infected_players.append(_network_id)
++
++	if !projector_started:
++		start_projector_hide_hunt_loop_rpc.rpc()
++	projector_started = true
++	await get_tree().create_timer(1.5).timeout
++
++	if not hunting_phase:
++		hunting_phase = true
++
++		player_scores[_network_id] += 1
++		set_searching_disabled_rpc.rpc(true)
++
++		light_handler.transition_to_dark_rpc.rpc()
++		await get_tree().create_timer(3.0).timeout
++		countdown_handler.set_active_rpc.rpc(active_players.size() - 1)
++		enable_player_fow_rpc.rpc()
++
++func _on_player_infected(_network_id: int, _by_network_id: int):
++
++	if not infected_players.has(_network_id):
++		infected_players.append(_network_id)
++		if GameManager.local_game:
++			local_handler.player_infected(players[_network_id])
++
++	if multiplayer.is_server():
++
++		player_scores[_by_network_id] += 1
++		countdown_handler.update_alive_indicator_rpc.rpc(active_players.size() - infected_players.size())
++
++		await get_tree().create_timer(1.0).timeout
++
++		check_game_end()
++
++func _on_player_died(_network_id: int, _by_network_id):
++	killed_players.append(_network_id)
++
++	await get_tree().create_timer(3.0).timeout
++
++	check_game_end()
++
++func _on_game_countdown_expired():
++	MusicManager.start_playing_music_host(true, 3, false, 3)
++	end_game()
++
++func _on_all_brief_ready():
++
++	await get_tree().create_timer(1.0).timeout
++	state_machine.transition_to_rpc.rpc(&"Round")
++
++func _on_countdown_expired():
++	super._on_countdown_expired()
++
++	for player in players.values():
++		player.set_active_rpc.rpc(true)
++
++	state_machine.transition_to_rpc.rpc(&"Play")

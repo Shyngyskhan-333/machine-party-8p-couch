@@ -1,0 +1,51 @@
+--- a/minigames/smoke_break/scripts/smoke_break.gd
++++ b/minigames/smoke_break/scripts/smoke_break.gd
+@@ -28,8 +28,48 @@
+ var finished_players: Array[SmokeBreakPlayer]
+ var player_scores: Dictionary[int, int]
+ 
++# 8P MOD: four extra seats as Vector4(x, y, z, yaw_degrees) in the local space of
++# PlayerSpawner/PlayerPositions (derived from the v2.1.2 reference scene), plus two
++# clones of crate1_003 (local origins) so the end seats have something to sit on.
++const MOD_EXTRA_SEATS: Array[Vector4] = [
++	Vector4(-1.92835, 3.06939, 3.62059, -45.0),
++	Vector4(0.462252, 3.06939, 3.48431, -52.5),
++	Vector4(2.87468, 3.06939, 1.19285, 15.0),
++	Vector4(2.86915, 3.06939, -1.10983, 30.0),
++]
++const MOD_EXTRA_CRATES: Array[Vector3] = [Vector3(-1.1323, 0, 3.8835), Vector3(3.71524, 0, -1.49696)]
++
++func _mod_add_seats() -> void :
++	if player_spawn_positions.size() >= 8:
++		return
++	var seat_parent: Node3D = get_node_or_null("PlayerSpawner/PlayerPositions")
++	if seat_parent == null:
++		return
++	var seats: Array[Node3D] = player_spawn_positions.duplicate()
++	for i in MOD_EXTRA_SEATS.size():
++		var s: Vector4 = MOD_EXTRA_SEATS[i]
++		var m := Marker3D.new()
++		m.name = "Spawn8P_%d" % (i + 4)
++		seat_parent.add_child(m)
++		m.transform = Transform3D(Basis(Vector3.UP, deg_to_rad(s.w)), Vector3(s.x, s.y, s.z))
++		seats.append(m)
++	player_spawn_positions = seats
++
++	var crate: Node3D = find_child("crate1_003", true, false)
++	if crate and crate.get_parent():
++		for i in MOD_EXTRA_CRATES.size():
++			var c: Node3D = crate.duplicate()
++			c.name = "crate1_003_8P_%d" % i
++			crate.get_parent().add_child(c)
++			c.transform = Transform3D(crate.transform.basis, MOD_EXTRA_CRATES[i])
++			c.visible = true
++
+ func _ready() -> void :
+ 	super._ready()
++
++	# 8P MOD: add seats 5-8 on every peer before spawn_players() runs.
++	if PlayerManager.player_presences.size() > 4:
++		_mod_add_seats()
+ 
+ 	round_play_state.timer_updated.connect(_on_timer_updated)
+ 

@@ -1,0 +1,26 @@
+--- a/scripts/components/character customization/customization_assigner.gd
++++ b/scripts/components/character customization/customization_assigner.gd
+@@ -94,6 +94,10 @@
+ 
+ 	var texture: Texture
+ 
++	# 8P MOD: added suits borrow a shipped texture and are tinted instead.
++	if Globals.modded_suit_tints.has(color_name):
++		color_name = Globals.modded_suit_tints[color_name][0]
++
+ 	if !use_cutoff_textures:
+ 		match color_name:
+ 			"red": texture = suit_texture_red
+@@ -118,6 +122,12 @@
+ 	assigned_suit_color = color_name
+ 	get_character_material()
+ 	character_material.set("albedo_texture", get_suit_texture(color_name))
++	# 8P MOD: reset to white for the original suits so a character that cycles
++	# away from a tinted colour does not keep the tint.
++	var tint := Color.WHITE
++	if Globals.modded_suit_tints.has(color_name):
++		tint = Globals.modded_suit_tints[color_name][1]
++	character_material.set("albedo_color", tint)
+ 
+ func remove_hat():
+ 	for child in bone_attachment_hat.get_children():

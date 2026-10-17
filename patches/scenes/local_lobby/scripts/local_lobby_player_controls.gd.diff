@@ -1,0 +1,47 @@
+--- a/scenes/local_lobby/scripts/local_lobby_player_controls.gd
++++ b/scenes/local_lobby/scripts/local_lobby_player_controls.gd
+@@ -19,6 +19,9 @@
+ 	"green", 
+ 	"yellow", 
+ 	"purple", 
++	"orange", 
++	"cyan", 
++	"pink", 
+ ]
+ 
+ @export var button_cooldown_duration: float = 0.1
+@@ -39,6 +42,10 @@
+ @export var hbox_selection_suit: Control
+ 
+ @export var seat_index: int
++
++# 8P MOD: seats 4-7 have no hand-placed panel position; local_lobby sets it.
++var extra_seat_position: Vector2 = Vector2.ZERO
++var extra_name_y_shift: float = 0.0
+ 
+ @export_category("Main Buttons")
+ @export var leave_button: Button
+@@ -175,6 +182,8 @@
+ 				pos = Vector2(446, 120)
+ 			3:
+ 				pos = Vector2(576, 112)
++			_:
++				pos = extra_seat_position
+ 	else:
+ 		match seat_index:
+ 			0:
+@@ -185,9 +194,14 @@
+ 				pos = Vector2(446, 193)
+ 			3:
+ 				pos = Vector2(576, 184)
++			_:
++				pos = extra_seat_position + Vector2(0, 72)
+ 	position = pos
+ 
+ func set_container_position_name_selection():
++	if seat_index >= 4:
++		position = Vector2(extra_seat_position.x, 127.0 + extra_name_y_shift)
++		return
+ 	position = Vector2(position.x, 127)
+ 
+ func set_active_element_from_mouse(_active_element, _direction: int = 0):
